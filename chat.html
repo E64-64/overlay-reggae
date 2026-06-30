@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Chat reggae — ressource indépendante</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Shrikhand&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   CHAT REGGAE — source navigateur OBS indépendante
+   À dimensionner à la taille de ta zone de chat (ex. 420 × 620).
+   ============================================================ */
+:root{
+  --red:#e1251b; --gold:#fed100; --green:#009b3a;
+  --black:#080a08; --black-2:#11160f;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+html, body{ width:100%; height:100%; background:transparent; overflow:hidden;
+  font-family:'Oswald', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+/* Hors OBS (aperçu) : fond sombre pour voir le rendu */
+html.debug body{ background:radial-gradient(120% 120% at 50% 0%, #2a1a08, #0a0604); }
+
+/* Panneau rasta (bordure tricolore qui ondule) */
+.panel{
+  position:relative; border-radius:16px; border:3px solid transparent;
+  /* fond TRANSPARENT (on garde juste la bordure rasta) */
+  background:
+    transparent padding-box,
+    linear-gradient(115deg, var(--red), var(--gold), var(--green), var(--gold), var(--red)) border-box;
+  background-size: 100% 100%, 300% 100%;
+  box-shadow:0 0 14px rgba(0,255,102,.20), 0 0 26px rgba(254,209,0,.18);
+  animation: rastaFlow 7s linear infinite;
+}
+@keyframes rastaFlow{ from{ background-position:0 0,0 0; } to{ background-position:0 0,300% 0; } }
+
+/* Le chat remplit toute la source */
+.chat{ position:fixed; inset:8px; display:flex; flex-direction:column; overflow:hidden; }
+.chat .chat-head{
+  display:flex; align-items:center; gap:10px;
+  padding:14px 18px 10px; border-bottom:1px solid rgba(254,209,0,.3);
+}
+.chat .chat-head .leaf{ width:30px; height:30px; animation:sway 4s ease-in-out infinite;
+  filter:drop-shadow(0 0 6px rgba(254,209,0,.55)); }
+.chat .chat-head .t{
+  font-family:'Shrikhand', cursive; font-size:24px;
+  background:linear-gradient(180deg, var(--red) 0 33%, var(--gold) 33% 66%, var(--green) 66% 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  -webkit-text-stroke:.6px rgba(0,0,0,.5);
+}
+.chat .chat-body{
+  flex:1; padding:14px 16px; overflow:hidden;
+  display:flex; flex-direction:column; gap:11px; justify-content:flex-end;
+}
+.msg{
+  font-family:'Oswald',sans-serif; font-size:18px; line-height:1.3;
+  color:#eef3ea; word-wrap:break-word; animation:msgIn .35s ease both;
+}
+.msg .u{ font-weight:700; color:var(--c, var(--gold));
+  text-shadow:0 0 8px color-mix(in srgb, var(--c, var(--gold)) 60%, transparent); }
+.msg .u::after{ content:" :"; color:#7f8a82; }
+/* vrais badges Twitch (images) */
+.msg .bdg{ height:18px; width:auto; vertical-align:-4px; margin-right:3px;
+  border-radius:3px; }
+.msg .bdg-leaf{ font-size:14px; margin-right:3px; vertical-align:-1px;
+  filter:drop-shadow(0 0 5px var(--green)); }
+/* fallback feuille (démo / aucun badge image dispo) */
+.msg.badge .u::before{ content:"🍃"; margin-right:6px; font-size:14px;
+  filter:drop-shadow(0 0 5px var(--green)); -webkit-text-stroke:0; }
+@keyframes msgIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
+/* sortie : fondu + glissement vers la gauche après expiration */
+.msg.out{ animation:msgOut .5s ease forwards; }
+@keyframes msgOut{ to{ opacity:0; transform:translateX(-18px); } }
+@keyframes sway{ 0%,100%{transform:rotate(-7deg);} 50%{transform:rotate(7deg);} }
+</style>
+</head>
+<body>
+
+  <div class="chat panel">
+    <div class="chat-head">
+      <svg class="leaf" viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <linearGradient id="rastaLeaf" gradientUnits="userSpaceOnUse" x1="50" y1="8" x2="50" y2="98">
+            <stop offset="0" stop-color="#e1251b"/><stop offset=".5" stop-color="#fed100"/><stop offset="1" stop-color="#009b3a"/>
+          </linearGradient>
+        </defs>
+        <g fill="url(#rastaLeaf)" stroke="#0a3d16" stroke-width="1.3" stroke-linejoin="round">
+          <path d="M50,90 C44,79 46,64 50,48 C54,64 56,79 50,90 Z" transform="rotate(-88 50 90)"/>
+          <path d="M50,90 C44,79 46,64 50,48 C54,64 56,79 50,90 Z" transform="rotate( 88 50 90)"/>
+          <path d="M50,90 C43,72 45,50 50,28 C55,50 57,72 50,90 Z" transform="rotate(-60 50 90)"/>
+          <path d="M50,90 C43,72 45,50 50,28 C55,50 57,72 50,90 Z" transform="rotate( 60 50 90)"/>
+          <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z" transform="rotate(-32 50 90)"/>
+          <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z" transform="rotate( 32 50 90)"/>
+          <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z"/>
+          <path d="M50,90 L50,99" stroke="#0a3d16" stroke-width="2.4" fill="none"/>
+        </g>
+      </svg>
+      <div class="t">Chat</div>
+    </div>
+    <div class="chat-body" id="chatBody"></div>
+  </div>
+
+<script>
+/* ============================================================
+   Aperçu vs OBS
+   ============================================================ */
+const params = new URLSearchParams(location.search);
+const isOBS = (typeof window.obsstudio !== 'undefined') || params.has('obs');
+if (!isOBS) document.documentElement.classList.add('debug');
+
+/* ============================================================
+   CONFIG — chat Twitch réel (lecture anonyme, AUCUN token requis)
+   Mets le nom de la chaîne, ou passe ?channel=xxx dans l'URL.
+   ============================================================ */
+const CONFIG = {
+  channel: 'jamaiiica',   // nom de la chaîne Twitch (en minuscules)
+};
+if (params.get('channel')) CONFIG.channel = params.get('channel');
+
+/* ============================================================
+   CHAT
+   ------------------------------------------------------------
+   CHAT RÉEL : soit tu superposes un widget tiers (StreamElements /
+   KapChat) par-dessus, soit tu pousses des messages via
+   addChatMessage({user, text, color, badge}) (ex. depuis Streamer.bot).
+   ============================================================ */
+const chatBody = document.getElementById('chatBody');
+const MAX_MESSAGES = 25;
+const MSG_LIFETIME = 30000;   // durée d'affichage d'un message avant disparition (ms)
+const userColors = ['#009b3a','#fed100','#e1251b','#5cc8ff','#ff7ad9','#b6ff00','#ffa44d'];
+
+/* ---- Badges Twitch (sans token) ----------------------------------
+   L'ancienne API badges.twitch.tv a été supprimée par Twitch, et la
+   nouvelle (Helix) exige un token. Les badges GLOBAUX ont des IDs
+   d'image stables : on les sert directement depuis le CDN officiel.
+   Les badges de SUB/BITS sont propres à chaque chaîne et nécessitent
+   un token → on retombe sur la feuille 🍃 pour ceux-là.
+   ------------------------------------------------------------------ */
+const BADGE_CDN = 'https://static-cdn.jtvnw.net/badges/v1/';
+const GLOBAL_BADGES = {            // setId -> id image (taille 2x)
+  broadcaster: '5527c58c-fb7d-422d-b71b-f309dcb85cc1',
+  moderator:   '3267646d-33f0-4b17-b3df-f923a41db1d0',
+  vip:         'b817aba4-fad8-49e2-b88a-7cc744dfa6ec',
+  partner:     'd12a2e27-16f6-41d0-ab77-b780518f00a3',
+  premium:     'bbbe0db0-a598-423e-86d0-f9fb98ca1933',  // Prime Gaming
+  turbo:       'bd444ec6-8f34-4bf9-91f4-af1e3428d80f',
+  'sub-gifter':'a5ef6c17-2e5b-4d8f-9b80-2779fd722414',
+  'glhf-pledge':'3158e758-3cb4-43c5-94b3-7639810451c5',
+};
+const LEAF_BADGES = /^(subscriber|founder|bits|bits-leader)$/;  // propres à la chaîne -> feuille
+
+function renderBadges(raw){
+  const frag = document.createDocumentFragment();
+  if (!raw) return frag;
+  for (const part of raw.split(',')){
+    const set = part.trim().split('/')[0];
+    if (GLOBAL_BADGES[set]){
+      const img = document.createElement('img');
+      img.className = 'bdg'; img.alt = set;
+      img.src = BADGE_CDN + GLOBAL_BADGES[set] + '/2';
+      frag.appendChild(img);
+    } else if (LEAF_BADGES.test(set)){
+      const s = document.createElement('span');
+      s.className = 'bdg-leaf'; s.textContent = '🍃';
+      frag.appendChild(s);
+    }
+  }
+  return frag;
+}
+
+function addChatMessage({user, text, color, badges='', badge=false}){
+  const el = document.createElement('div');
+  el.className = 'msg';
+  el.style.setProperty('--c', color || userColors[(Math.random()*userColors.length)|0]);
+  // vrais badges Twitch (images) si dispo, sinon feuille de secours (démo)
+  const badgeFrag = renderBadges(badges);
+  if (badgeFrag.childNodes.length) el.appendChild(badgeFrag);
+  else if (badge) el.classList.add('badge');
+  const u = document.createElement('span'); u.className = 'u'; u.textContent = user;
+  el.appendChild(u);
+  el.appendChild(document.createTextNode(' ' + text));
+  // le dernier message arrive EN BAS, les anciens remontent
+  chatBody.appendChild(el);
+  while (chatBody.children.length > MAX_MESSAGES) chatBody.removeChild(chatBody.firstChild);
+  // disparition automatique après MSG_LIFETIME (fondu + glissement)
+  setTimeout(()=>{
+    el.classList.add('out');
+    setTimeout(()=> el.remove(), 500);   // retire après l'animation de sortie
+  }, MSG_LIFETIME);
+}
+window.addChatMessage = addChatMessage;
+
+/* ============================================================
+   CHAT TWITCH RÉEL — IRC over WebSocket, lecture anonyme (justinfan)
+   Aucun token, aucune autorisation : on lit juste le chat public.
+   ============================================================ */
+function parsePrivmsg(line){
+  let tags = {};
+  if (line[0] === '@'){
+    const sp = line.indexOf(' ');
+    line.slice(1, sp).split(';').forEach(p=>{ const i=p.indexOf('='); tags[p.slice(0,i)] = p.slice(i+1); });
+    line = line.slice(sp + 1);
+  }
+  // :nick!nick@nick.tmi.twitch.tv PRIVMSG #chan :message
+  const bang = line.indexOf('!');
+  const nick = (line[0] === ':' && bang > 0) ? line.slice(1, bang) : '';
+  const pi = line.indexOf('PRIVMSG');
+  const colon = line.indexOf(' :', pi);
+  if (colon === -1) return null;
+  const text = line.slice(colon + 2).replace(/[]/g, '').trim(); // enlève /me (ACTION)
+  return {
+    user: tags['display-name'] || nick,
+    text,
+    color: tags['color'] || undefined,
+    badges: tags['badges'] || '',        // brut : "subscriber/6,moderator/1,vip/1"
+    roomId: tags['room-id'] || '',
+  };
+}
+
+function connectChat(){
+  const chan = (CONFIG.channel || '').toLowerCase().trim().replace(/^#/, '');
+  if (!chan) return false;
+  let ws;
+  function open(){
+    ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+    ws.onopen = ()=>{
+      ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+      ws.send('NICK justinfan' + (1000 + Math.floor(Math.random() * 98999)));
+      ws.send('JOIN #' + chan);
+      console.log('[Chat] connecté à #' + chan);
+    };
+    ws.onmessage = (ev)=>{
+      for (const line of ev.data.split('\r\n')){
+        if (!line) continue;
+        if (line.startsWith('PING')){ ws.send('PONG :tmi.twitch.tv'); continue; }
+        if (line.indexOf('PRIVMSG') === -1) continue;
+        const m = parsePrivmsg(line);
+        if (m && m.text) addChatMessage(m);
+      }
+    };
+    ws.onclose = ()=>{ console.log('[Chat] déconnecté, reconnexion 3 s'); setTimeout(open, 3000); };
+    ws.onerror = ()=>{ try{ ws.close(); }catch{} };
+  }
+  open();
+  return true;
+}
+
+const hasRealChat = connectChat();
+
+/* --- Démo (aperçu uniquement, si AUCUNE chaîne configurée) --- */
+if (!hasRealChat && document.documentElement.classList.contains('debug')){
+  const demo = [
+    {user:'jeremxn',     text:'yo la team, one love 🍃', badge:true},
+    {user:'MrDylanTTV',  text:'first ! gg le stream'},
+    {user:'Sarah_RP',    text:'l’overlay est trop stylé 🔥'},
+    {user:'NoScope420',  text:'YEEHAW à chaque kill obligé'},
+    {user:'DbD_Maxx',    text:'pas de sprint le pauvre 😂'},
+    {user:'ClemTV',      text:'lance la roue stp !!'},
+    {user:'WendyGG',     text:'jammin’ 🎶'},
+  ];
+  let di = 0;
+  demo.slice(0,5).forEach(addChatMessage);
+  setInterval(()=>{ addChatMessage(demo[di % demo.length]); di++; }, 3500);
+}
+</script>
+</body>
+</html>

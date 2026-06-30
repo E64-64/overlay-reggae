@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Overlay Stream — Reggae / Bob Marley</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Rye&family=Shrikhand&family=Cinzel:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   OVERLAY EVENTS — Thème REGGAE
+   Tricolore rasta rouge/or/vert · bordures qui ondulent
+   Panneaux events (sub/don/follow) uniquement.
+   Le chat est une ressource séparée -> chat.html
+   Cible : source navigateur OBS 1920 x 1080
+   ============================================================ */
+
+:root{
+  --red:   #e1251b;
+  --gold:  #fed100;
+  --green: #009b3a;
+  --neon:  #00ff66;
+  --black: #080a08;
+  --black-2:#11160f;
+  --cream: #f4e6c8;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+html, body{
+  width:1920px; height:1080px;
+  background:transparent;          /* transparent pour OBS */
+  overflow:hidden;
+  font-family:'Oswald', system-ui, sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+/* Hors OBS (aperçu) : fond sombre + halo rasta */
+html.debug body{
+  background:
+    radial-gradient(70% 60% at 20% 100%, rgba(0,155,58,.18), transparent 60%),
+    radial-gradient(70% 60% at 80% 0%,  rgba(225,37,27,.18), transparent 60%),
+    radial-gradient(120% 120% at 50% 0%, #2a1a08 0%, #160d05 55%, #0a0604 100%);
+}
+
+/* Bandeau rasta plein écran en haut */
+.topband{
+  position:absolute; top:0; left:0; width:100%; height:8px; z-index:5;
+  background:linear-gradient(90deg, var(--green) 0 33%, var(--gold) 33% 66%, var(--red) 66% 100%);
+  box-shadow:0 0 14px rgba(254,209,0,.5);
+}
+
+/* ============================================================
+   PANNEAU RASTA : bordure tricolore arrondie + ondulation reggae
+   ============================================================ */
+.panel{
+  position:relative;
+  border-radius:16px;
+  border:3px solid transparent;
+  /* astuce : fond intérieur (padding-box) + bordure dégradée (border-box) */
+  background:
+    linear-gradient(180deg, var(--black-2), var(--black)) padding-box,
+    linear-gradient(115deg, var(--green), var(--gold), var(--red), var(--gold), var(--green)) border-box;
+  background-size: 100% 100%, 300% 100%;
+  background-position: 0 0, 0 0;
+  box-shadow:
+    0 0 14px rgba(0,255,102,.20),
+    0 0 26px rgba(254,209,0,.18),
+    inset 0 0 50px rgba(0,0,0,.5);
+  animation: rastaFlow 7s linear infinite;   /* la bordure « coule » doucement */
+}
+@keyframes rastaFlow{
+  from{ background-position: 0 0, 0 0; }
+  to  { background-position: 0 0, 300% 0; }
+}
+
+/* Barre dégradée rasta (signature) */
+.gradbar{
+  height:6px; border-radius:6px; margin:10px 16px 0;
+  background:linear-gradient(90deg, var(--green) 0%, var(--gold) 50%, var(--red) 100%);
+  box-shadow:0 0 12px rgba(254,209,0,.5);
+}
+
+/* Label reggae (Shrikhand + dégradé rasta) */
+.label{
+  font-family:'Shrikhand', cursive; font-weight:400;
+  letter-spacing:.01em; text-transform:none;
+  background:linear-gradient(180deg, var(--green) 0 33%, var(--gold) 33% 66%, var(--red) 66% 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  -webkit-text-stroke:.8px rgba(0,0,0,.55);
+  text-shadow:0 2px 5px rgba(0,0,0,.7);
+  filter:drop-shadow(0 0 8px rgba(254,209,0,.35));
+}
+
+/* ============================================================
+   RANGÉE D'ÉVÉNEMENTS (haut)
+   ============================================================ */
+.events{
+  position:absolute; top:34px; left:50%; transform:translateX(-50%);
+  display:flex; gap:48px; align-items:flex-start;
+}
+.evt{ position:relative; width:430px; padding-top:18px; }
+.evt .label{
+  position:absolute; top:0; left:50%; transform:translateX(-50%);
+  font-size:22px; white-space:nowrap; z-index:2;
+}
+.evt .evt-box{
+  margin-top:16px; padding:20px 18px 16px;
+  min-height:100px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+}
+.evt .name{
+  font-family:'Cinzel', serif; font-weight:700;
+  color:var(--cream); font-size:34px; line-height:1.1; text-align:center;
+  text-shadow:0 2px 6px #000, 0 0 16px rgba(254,209,0,.25);
+}
+.evt .sub{
+  font-family:'Oswald',sans-serif; font-weight:600;
+  color:var(--gold); font-size:16px; letter-spacing:.05em; margin-top:5px;
+  text-shadow:0 0 8px rgba(254,209,0,.6);
+}
+
+/* Aide aperçu */
+#help{
+  position:fixed; left:12px; top:18px; z-index:60;
+  font:13px/1.5 'Oswald',sans-serif; color:#ffe08a;
+  background:rgba(0,0,0,.55); padding:8px 12px; border-radius:8px;
+  border:1px solid rgba(254,209,0,.4); max-width:520px;
+}
+#help{ display:none; }            /* caché par défaut (jamais visible pour les viewers) */
+html.debugui #help{ display:block; }  /* visible seulement avec ?debug=1 */
+</style>
+</head>
+
+<body>
+
+  <div class="topband"></div>
+
+  <!-- ============ ÉVÉNEMENTS (haut) ============ -->
+  <div class="events">
+
+    <div class="evt">
+      <div class="label">Recent Sub</div>
+      <div class="evt-box panel">
+        <div class="name" data-field="sub-name">jeremxn</div>
+        <div class="sub" data-field="sub-info">3 mois · Tier 1</div>
+        <div class="gradbar"></div>
+      </div>
+    </div>
+
+    <div class="evt">
+      <div class="label">New Donation</div>
+      <div class="evt-box panel">
+        <div class="name" data-field="don-name">MrDeadPool98_</div>
+        <div class="sub" data-field="don-info">5,00 €</div>
+        <div class="gradbar"></div>
+      </div>
+    </div>
+
+    <div class="evt">
+      <div class="label">New Follower</div>
+      <div class="evt-box panel">
+        <div class="name" data-field="fol-name">MrDylanTTV</div>
+        <div class="sub" data-field="fol-info">Bienvenue !</div>
+        <div class="gradbar"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="help">
+    Mode aperçu (hors OBS) · overlay events <b>1920×1080</b>, thème reggae. Dans OBS le fond est transparent.
+    Le chat est désormais une ressource séparée (<code>chat.html</code>). Branche les events via <code>setEvent()</code>.
+  </div>
+
+<script>
+/* ============================================================
+   APERÇU vs OBS
+   ============================================================ */
+const params = new URLSearchParams(location.search);
+const isOBS = (typeof window.obsstudio !== 'undefined') || params.has('obs');
+if (!isOBS) document.documentElement.classList.add('debug');        // fond sombre d'aperçu
+if (params.has('debug')) document.documentElement.classList.add('debugui'); // panneaux d'aide
+
+/* ============================================================
+   CONFIG — connexion Twitch directe (EventSub)
+   ------------------------------------------------------------
+   ⚠️ SÉCURITÉ : le token donne accès à ton compte. Garde ce fichier
+   LOCAL (jamais partagé/GitHub/à l'écran). Génère un token avec les scopes :
+     • channel:read:subscriptions   (subs / resubs)
+     • moderator:read:followers     (follows)
+     • bits:read                    (dons = bits/cheers)
+   Le client_id et ton user_id sont détectés automatiquement.
+   ============================================================ */
+const CONFIG = {
+  twitch: {
+    enabled: true,   // passe à true et colle ton token
+    token: 'hmjybl3fwbxbqv8242myr5lsqk8qc1',        // ton token OAuth (sans le préfixe 'oauth:')
+  },
+};
+
+/* ============================================================
+   Met à jour un panneau event.  Ex. setEvent('sub', {name, info})
+   ============================================================ */
+function setEvent(kind, {name, info}){
+  const n = document.querySelector(`[data-field="${kind}-name"]`);
+  const i = document.querySelector(`[data-field="${kind}-info"]`);
+  if (n && name != null) n.textContent = name;
+  if (i && info != null) i.textContent = info;
+}
+window.setEvent = setEvent;
+
+/* ============================================================
+   TWITCH EventSub : actualise sub / resub / follow / dons (bits)
+   ============================================================ */
+function tierLabel(t){ return t ? String(parseInt(t,10)/1000) : '1'; }
+
+function handleEvent(type, e){
+  console.log('[Twitch event]', type, e);   // debug : voir chaque event arriver
+  if (type === 'channel.subscribe'){
+    if (e.is_gift) return;        // les subs offerts vont dans le panneau DONS (via channel.subscription.gift)
+    setEvent('sub', { name:e.user_name, info:`Tier ${tierLabel(e.tier)}` });
+  } else if (type === 'channel.subscription.message'){
+    setEvent('sub', { name:e.user_name, info:`${e.cumulative_months} mois · Tier ${tierLabel(e.tier)}` });
+  } else if (type === 'channel.subscription.gift'){
+    const n = e.total || 1;
+    let info = `${n} sub${n>1?'s':''} offert${n>1?'s':''}`;
+    // cumulative_total = total offert par cette personne (null si anonyme/masqué)
+    if (e.cumulative_total) info += ` · ${e.cumulative_total} au total`;
+    setEvent('don', { name: e.is_anonymous ? 'Anonyme' : e.user_name, info });
+  } else if (type === 'channel.cheer'){
+    setEvent('don', { name:e.is_anonymous?'Anonyme':e.user_name, info:`${e.bits} bits` });
+  } else if (type === 'channel.follow'){
+    setEvent('fol', { name:e.user_name, info:'Bienvenue !' });
+  }
+}
+
+async function connectTwitch(){
+  const cfg = CONFIG.twitch;
+  if (!cfg.enabled || !cfg.token) return;
+  const token = cfg.token.replace(/^oauth:/i, '').trim();
+
+  // 1) Valider le token -> client_id + user_id + scopes
+  let info;
+  try{
+    const r = await fetch('https://id.twitch.tv/oauth2/validate', { headers:{ Authorization:'OAuth ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    info = await r.json();
+  }catch(e){
+    console.error('[Twitch] token invalide ou expiré :', e.message,
+      '\n→ scopes requis : channel:read:subscriptions, moderator:read:followers, bits:read');
+    return;
+  }
+  const clientId = info.client_id, userId = info.user_id;
+  console.log('[Twitch] token OK pour', info.login, '— connexion EventSub…');
+
+  // Liste des abonnements à créer
+  const SUBS = [
+    { type:'channel.subscribe',            version:'1', condition:{ broadcaster_user_id:userId } },
+    { type:'channel.subscription.message', version:'1', condition:{ broadcaster_user_id:userId } },
+    { type:'channel.subscription.gift',    version:'1', condition:{ broadcaster_user_id:userId } }, // gifts -> dons
+    { type:'channel.cheer',                version:'1', condition:{ broadcaster_user_id:userId } },
+    { type:'channel.follow',               version:'2', condition:{ broadcaster_user_id:userId, moderator_user_id:userId } },
+  ];
+
+  let ws, subscribed = false, closedByUs = false;
+  function open(url){
+    closedByUs = false;
+    ws = new WebSocket(url || 'wss://eventsub.wss.twitch.tv/ws');
+
+    ws.onmessage = async (ev)=>{
+      let m; try{ m = JSON.parse(ev.data); }catch{ return; }
+      const t = m.metadata && m.metadata.message_type;
+
+      if (t === 'session_welcome'){
+        if (subscribed) return;              // reconnexion : les abonnements sont déjà migrés
+        subscribed = true;
+        const sid = m.payload.session.id;
+        for (const s of SUBS){
+          try{
+            const sr = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
+              method:'POST',
+              headers:{ 'Authorization':'Bearer '+token, 'Client-Id':clientId, 'Content-Type':'application/json' },
+              body: JSON.stringify({ ...s, transport:{ method:'websocket', session_id:sid } }),
+            });
+            if (sr.ok) console.log('[Twitch] abonné :', s.type);
+            else console.warn('[Twitch] échec', s.type, sr.status, '— scope manquant ?');
+          }catch(e){ console.warn('[Twitch] erreur', s.type, e); }
+        }
+      }
+      else if (t === 'session_reconnect'){
+        // Twitch demande de migrer : on bascule sans se réabonner (subs conservés)
+        const next = m.payload.session.reconnect_url;
+        closedByUs = true; try{ ws.close(); }catch{}; open(next);
+      }
+      else if (t === 'notification'){
+        handleEvent(m.payload.subscription.type, m.payload.event);
+      }
+    };
+
+    ws.onclose = ()=>{
+      if (closedByUs) return;                // fermeture volontaire (reconnect) -> ne pas rouvrir
+      subscribed = false;                    // vraie coupure -> nouvelle session -> se réabonner
+      console.log('[Twitch] WS fermé, reconnexion dans 3 s');
+      setTimeout(()=> open(), 3000);
+    };
+    ws.onerror = ()=>{ try{ ws.close(); }catch{} };
+  }
+  open();
+}
+
+/* --- Aperçu : fait défiler des events de démo pour visualiser l'actualisation --- */
+if (document.documentElement.classList.contains('debug')){
+  const demo = [
+    ['sub', {name:'NightWolf_',  info:'2 mois · Tier 1'}],
+    ['don', {name:'GenereuxTTV', info:'500 bits'}],
+    ['fol', {name:'NewViewer42', info:'Bienvenue !'}],
+    ['don', {name:'BigDonator',  info:'5 subs offerts · 20 au total'}],
+    ['sub', {name:'PrimeKid',    info:'Tier 1'}],
+    ['don', {name:'Anonyme',     info:'1000 bits'}],
+  ];
+  let k = 0;
+  setInterval(()=>{ const [kind, data] = demo[k % demo.length]; setEvent(kind, data); k++; }, 2500);
+}
+
+connectTwitch();
+</script>
+</body>
+</html>

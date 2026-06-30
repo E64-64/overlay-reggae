@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Roue de la Fortune — Overlay Twitch</title>
+
+<!-- Polices : western/gaming (Rye), titres condensés métalliques (Oswald), corps (Cinzel) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Rye&family=Shrikhand&family=Cinzel:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   ROUE DE LA FORTUNE — DA cohérente avec l'overlay du stream
+   Vert néon #00FF66 · Rouge sombre · Noir · texte crème
+   ============================================================ */
+
+:root{
+  --neon:        #00ff66;   /* vert néon des bordures */
+  --neon-soft:   #00c24e;
+  --red:         #7a0d12;   /* rouge sombre des cases */
+  --red-bright:  #e23b2e;   /* rouge accent dégradé */
+  --black:       #080a08;   /* fond des cases */
+  --black-2:     #0e1410;
+  --cream:       #f4e6c8;   /* texte principal */
+  --silver:      #d7dcd9;   /* labels embossés */
+  --gold:        #ffcf5c;   /* cases spéciales (jackpot) */
+  --panel-pad:   26px;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+/* Fond TRANSPARENT pour OBS (le jeu reste visible derrière).
+   Mettre --debug-bg sur <html class="debug"> pour visualiser hors OBS. */
+html, body{
+  width:100%; height:100%;
+  background:transparent;
+  overflow:hidden;
+  font-family:'Oswald', system-ui, sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+html.debug body{
+  background:
+    radial-gradient(120% 120% at 50% 0%, #3a1d0a 0%, #1a0d05 55%, #0a0604 100%);
+}
+
+/* ---------- Conteneur centré + animation apparition/disparition ---------- */
+#stage{
+  position:fixed; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  /* État caché par défaut */
+  opacity:0; transform:scale(.82);
+  pointer-events:none;
+  transition:opacity .55s ease, transform .55s cubic-bezier(.16,1,.3,1);
+}
+#stage.show{ opacity:1; transform:scale(1); }
+
+/* ---------- Panneau principal (look des cartes de l'overlay) ---------- */
+.panel{
+  position:relative;
+  padding:var(--panel-pad) var(--panel-pad) 30px;
+  border-radius:18px;
+  background:
+    linear-gradient(180deg, var(--black-2), var(--black));
+  /* double bordure néon + glow, comme les cartes "RECENT SUBSCRIBER" */
+  border:2px solid var(--neon);
+  box-shadow:
+    0 0 0 4px #04130a,
+    0 0 14px var(--neon),
+    0 0 38px rgba(0,255,102,.55),
+    inset 0 0 60px rgba(0,255,102,.06);
+  display:flex; flex-direction:column; align-items:center;
+  gap:14px;
+}
+/* fine ligne intérieure pour l'effet "double trait" */
+.panel::after{
+  content:""; position:absolute; inset:6px;
+  border:1px solid rgba(0,255,102,.35);
+  border-radius:13px; pointer-events:none;
+}
+
+/* ---------- Titre (label argenté embossé) ---------- */
+.title{
+  font-family:'Oswald', sans-serif;
+  font-weight:700; letter-spacing:.18em;
+  text-transform:uppercase;
+  font-size:clamp(16px, 2.2vw, 26px);
+  background:linear-gradient(180deg,#ffffff 0%,#c7ccc9 45%,#8a908d 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  text-shadow:0 2px 0 rgba(0,0,0,.6);
+  filter:drop-shadow(0 0 6px rgba(0,255,102,.25));
+}
+
+/* ---------- Variante RASTA (police reggae + bandes rouge/or/vert) ----------
+   Ajoute/retire la classe "rasta" sur la <div class="title"> pour activer. */
+.title.rasta{
+  font-family:'Shrikhand', cursive;
+  font-weight:400; letter-spacing:.04em;
+  text-transform:none;
+  /* bandes horizontales du drapeau rasta : rouge / or / vert */
+  background:linear-gradient(180deg,
+    #e1251b 0 33%, #fed100 33% 66%, #009b3a 66% 100%);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+  /* contour sombre + halo pour rester lisible sur fond clair/foncé */
+  -webkit-text-stroke:1px rgba(0,0,0,.55);
+  text-shadow:0 2px 4px rgba(0,0,0,.7);
+  filter:drop-shadow(0 0 10px rgba(254,209,0,.4));
+}
+
+/* ---------- Zone roue ---------- */
+.wheel-wrap{
+  position:relative;
+  width:clamp(320px, 56vmin, 560px);
+  aspect-ratio:1/1;
+}
+
+/* Glow animé derrière la roue pendant la rotation */
+.wheel-wrap::before{
+  content:""; position:absolute; inset:-6%;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(0,255,102,.35), transparent 62%);
+  opacity:.35; transition:opacity .4s ease; z-index:0;
+}
+.wheel-wrap.spinning::before{ animation:glowPulse 1.1s ease-in-out infinite; }
+@keyframes glowPulse{
+  0%,100%{ opacity:.30; transform:scale(.98); }
+  50%    { opacity:.85; transform:scale(1.04); }
+}
+
+/* Canvas de la roue */
+#wheel{
+  position:relative; z-index:1;
+  width:100%; height:100%;
+  border-radius:50%;
+  /* anneau néon autour de la roue */
+  box-shadow:
+    0 0 0 6px #04130a,
+    0 0 0 8px var(--neon),
+    0 0 22px rgba(0,255,102,.7),
+    inset 0 0 40px rgba(0,0,0,.8);
+  display:block;
+}
+#wheel.spinning{ filter:drop-shadow(0 0 18px rgba(0,255,102,.85)); }
+
+/* Moyeu central */
+.hub{
+  position:absolute; z-index:3; top:50%; left:50%;
+  width:21%; height:21%; transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #1c241d, #060806);
+  border:2px solid var(--neon);
+  box-shadow:0 0 16px var(--neon), inset 0 0 14px rgba(0,0,0,.9);
+  display:flex; align-items:center; justify-content:center;
+}
+.hub .leaf{
+  width:72%; height:72%;
+  filter:drop-shadow(0 0 6px rgba(254,209,0,.5)) drop-shadow(0 0 3px rgba(0,255,102,.4));
+}
+.hub span{
+  font-family:'Rye', serif; color:var(--cream);
+  font-size:clamp(18px,3.4vmin,30px);
+  text-shadow:0 0 10px rgba(0,255,102,.6);
+  user-select:none;
+}
+
+/* ---------- Pointeur fixe en HAUT ---------- */
+.pointer{
+  position:absolute; z-index:4; top:-3%; left:50%;
+  transform:translateX(-50%);
+  width:0; height:0;
+  border-left:18px solid transparent;
+  border-right:18px solid transparent;
+  border-top:34px solid var(--neon);
+  filter:drop-shadow(0 0 8px var(--neon));
+}
+.pointer::after{ /* liseré rouge sous le pointeur */
+  content:""; position:absolute; top:-34px; left:-12px;
+  border-left:12px solid transparent;
+  border-right:12px solid transparent;
+  border-top:22px solid var(--red-bright);
+}
+
+/* ---------- Barre dégradée (signature de l'overlay) ---------- */
+.gradbar{
+  width:78%; height:6px; border-radius:6px;
+  background:linear-gradient(90deg,
+    var(--neon) 0%, #b6ff00 30%, var(--gold) 55%, var(--red-bright) 100%);
+  box-shadow:0 0 12px rgba(0,255,102,.6);
+}
+
+/* ---------- Bannière de résultat ---------- */
+.result{
+  min-height:0; max-width:92%;
+  text-align:center; overflow:hidden;
+  max-height:0; opacity:0;
+  transition:max-height .5s ease, opacity .4s ease, margin .4s ease;
+}
+.result.show{ max-height:200px; opacity:1; margin-top:4px; }
+.result .game{
+  font-family:'Oswald',sans-serif; font-weight:600;
+  letter-spacing:.22em; text-transform:uppercase;
+  font-size:clamp(11px,1.4vw,14px); color:var(--neon);
+  text-shadow:0 0 8px rgba(0,255,102,.7);
+}
+.result .text{
+  font-family:'Cinzel', serif; font-weight:700;
+  color:var(--cream);
+  font-size:clamp(17px,2.4vw,28px);
+  line-height:1.25; margin-top:4px;
+  text-shadow:0 2px 6px #000, 0 0 18px rgba(0,255,102,.25);
+}
+
+/* Canvas confettis plein écran (au-dessus de tout) */
+#confetti{
+  position:fixed; inset:0; z-index:50; pointer-events:none;
+}
+
+/* Petit panneau d'aide test (caché en prod) */
+#help{
+  position:fixed; left:12px; bottom:10px; z-index:60;
+  font:12px/1.5 'Oswald',sans-serif; color:#9fe9bd;
+  background:rgba(0,0,0,.55); padding:8px 12px; border-radius:8px;
+  border:1px solid rgba(0,255,102,.4); max-width:340px;
+}
+html:not(.debug) #help{ display:none; }
+</style>
+</head>
+
+<body>
+  <!-- Confettis -->
+  <canvas id="confetti"></canvas>
+
+  <!-- Scène (apparition/disparition) -->
+  <div id="stage">
+    <div class="panel">
+      <div class="title rasta" id="panelTitle">Roue du Jam</div>
+
+      <div class="wheel-wrap" id="wheelWrap">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="1100" height="1100"></canvas>
+        <div class="hub">
+        <!-- Feuille rasta (cannabis) en dégradé rouge/or/vert -->
+        <svg class="leaf" viewBox="0 0 100 100" aria-label="feuille rasta">
+          <defs>
+            <linearGradient id="rastaLeaf" gradientUnits="userSpaceOnUse" x1="50" y1="8" x2="50" y2="98">
+              <stop offset="0"   stop-color="#e1251b"/>
+              <stop offset="0.5" stop-color="#fed100"/>
+              <stop offset="1"   stop-color="#009b3a"/>
+            </linearGradient>
+          </defs>
+          <g fill="url(#rastaLeaf)" stroke="#0a3d16" stroke-width="1.3" stroke-linejoin="round">
+            <!-- 7 folioles autour du point de base (50,90) -->
+            <path d="M50,90 C44,79 46,64 50,48 C54,64 56,79 50,90 Z" transform="rotate(-88 50 90)"/>
+            <path d="M50,90 C44,79 46,64 50,48 C54,64 56,79 50,90 Z" transform="rotate( 88 50 90)"/>
+            <path d="M50,90 C43,72 45,50 50,28 C55,50 57,72 50,90 Z" transform="rotate(-60 50 90)"/>
+            <path d="M50,90 C43,72 45,50 50,28 C55,50 57,72 50,90 Z" transform="rotate( 60 50 90)"/>
+            <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z" transform="rotate(-32 50 90)"/>
+            <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z" transform="rotate( 32 50 90)"/>
+            <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z"/>
+            <!-- tige -->
+            <path d="M50,90 L50,99" stroke="#0a3d16" stroke-width="2.4" fill="none"/>
+          </g>
+        </svg>
+      </div>
+      </div>
+
+      <div class="gradbar"></div>
+
+      <div class="result" id="result">
+        <div class="game" id="resultGame"></div>
+        <div class="text" id="resultText"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="help">
+    Mode debug · <b>Espace</b> = tour aléatoire · <b>1–9</b> = forcer une case ·
+    <code>spinWheel()</code> dans la console. Retire <code>?debug=1</code> pour OBS.
+  </div>
+
+<script>
+/* ============================================================
+   CONFIGURATION — tout est modifiable ici
+   ============================================================ */
+const CONFIG = {
+  // Durée de rotation (ms) : tirée au hasard entre min et max
+  spinMinDuration: 5000,
+  spinMaxDuration: 8000,
+  // Nombre de tours complets avant de s'arrêter (illusion de vrai tirage)
+  minTurns: 6,
+  maxTurns: 9,
+
+  // Auto-masquage après le résultat (ms). 0 = reste affichée.
+  autoHideMs: 9000,
+  // Délai avant de cacher après confettis
+  hideDelayAfterWin: 6500,
+
+  // Titre du panneau
+  title: 'Roue du Jam',
+
+  // Couleurs de la DA
+  colors: {
+    neon:      '#00ff66',
+    red:       '#7a0d12',
+    redBright: '#e23b2e',
+    black:     '#0a0d0a',
+    black2:    '#16100c',
+    cream:     '#f4e6c8',
+    gold:      '#ffcf5c',
+  },
+
+  // SONS : mets des URLs (mp3/ogg) ou laisse vide pour les sons synthétisés.
+  sounds: {
+    tick:   '',  // bruit de cran à chaque case
+    win:    '',  // son de victoire
+    appear: '',  // son d'apparition
+  },
+  volume: 0.5,
+
+  // ---- INTÉGRATION POINTS DE CHAÎNE via Streamer.bot (WebSocket) ----
+  streamerbot: {
+    enabled: false,                  // passe à true quand Streamer.bot est prêt
+    url: 'ws://127.0.0.1:8080/',     // adresse du WebSocket Server de Streamer.bot
+    // Nom EXACT de ta récompense de points de chaîne (sensible à la casse).
+    // Laisse '' pour déclencher sur N'IMPORTE quelle récompense.
+    rewardName: 'Roue du Jam',
+  },
+
+  // ---- INTÉGRATION DIRECTE TWITCH (EventSub WebSocket, sans Streamer.bot) ----
+  //  ⚠️ SÉCURITÉ : le token donne accès à ton compte. Garde ce fichier LOCAL,
+  //     ne le partage pas, ne le mets pas sur GitHub, ne le montre pas à l'écran.
+  //     Génère un token avec UNIQUEMENT le scope « channel:read:redemptions »
+  //     (ex. via twitchtokengenerator.com). Le client_id et ton user_id sont
+  //     détectés automatiquement à partir du token.
+  twitch: {
+    enabled: true,                  // passe à true et colle ton token ci-dessous
+    token: 'hmjybl3fwbxbqv8242myr5lsqk8qc1',                       // ton token OAuth (sans le préfixe 'oauth:')
+    rewardName: 'Roue du Jam',     // '' = n'importe quelle récompense
+  },
+};
+
+/* ============================================================
+   ITEMS — tableau facilement modifiable
+   short  : texte affiché SUR la roue (court)
+   full   : texte complet affiché dans la bannière de résultat
+   game   : 'HUNT' | 'DBD' | 'SPECIAL'
+   weight : probabilité relative (défaut 1)
+   color  : (optionnel) force la couleur de la case
+   ============================================================ */
+const ITEMS = [
+   // ---------- HUNT: SHOWDOWN ----------
+  { game:'HUNT', short:'Choisis mon chasseur', full:'Pour la prochaine game, tu choisis le chasseur.' },
+  { game:'HUNT', short:'Choisis mon loadout',  full:'Choisis mon loadout pour la prochaine game.' },
+  { game:'HUNT', short:'Game sniper',          full:'La prochaine, elle est pour moi, et au Meynard !' },
+  { game:'HUNT', short:'Trigger',              full:'Déclenche tous les animaux que tu croises pendant 1 minute.' },
+  { game:'HUNT', short:'Pas de heal',          full:'Pas de heal pendant le prochain fight (sauf régen).' },
+
+  // ---------- DEAD BY DAYLIGHT (survivants uniquement) ----------
+  { game:'DBD', short:'Choisis mon survivant', full:'Pour la prochaine partie, tu choisis mon survivant.' },
+  { game:'DBD', short:'Choisis mon offrande',  full:'Tu choisis mon offrande pour la prochaine partie.' },
+  { game:'DBD', short:'Choisis mes perks',     full:'Tu choisis mes perks pour la prochaine partie.' },
+  { game:'DBD', short:'Choisis mon objet',     full:'Tu choisis mon objet (et ses add-ons) pour la prochaine partie.' },
+  { game:'DBD', short:'Rate ton prochain QTE', full:'Rate volontairement ton prochain skill-check (QTE).' },
+  { game:'DBD', short:'Stop en pleine chase',  full:'Arrête-toi complètement de bouger 3 secondes au début de la prochaine poursuite.' },
+
+];
+
+/* ============================================================
+   ÉTAT & RÉFÉRENCES DOM
+   ============================================================ */
+const C        = CONFIG.colors;
+const canvas   = document.getElementById('wheel');
+const ctx      = canvas.getContext('2d');
+const stage    = document.getElementById('stage');
+const wheelWrap= document.getElementById('wheelWrap');
+const resultEl = document.getElementById('result');
+const resGame  = document.getElementById('resultGame');
+const resText  = document.getElementById('resultText');
+document.getElementById('panelTitle').textContent = CONFIG.title;
+
+let   WHEEL    = ITEMS;                     // cases actuellement sur la roue (filtrées par jeu)
+let   N        = WHEEL.length;
+let   SEG      = (Math.PI * 2) / N;        // angle d'une case
+let   rotation = 0;                         // rotation courante (rad)
+let   spinning = false;
+let   winnerIdx = -1;
+
+/* ============================================================
+   DESSIN DE LA ROUE
+   ============================================================ */
+function segColor(i){
+  if (WHEEL[i].color) return WHEEL[i].color;
+  // alternance noir / rouge sombre, comme la DA
+  return (i % 2 === 0) ? C.black : C.red;
+}
+
+function drawWheel(){
+  const size = canvas.width;
+  const r    = size / 2;
+  ctx.clearRect(0,0,size,size);
+  ctx.save();
+  ctx.translate(r, r);
+  ctx.rotate(rotation);
+
+  for (let i = 0; i < N; i++){
+    const a0 = i * SEG;
+    const a1 = a0 + SEG;
+    const isWinner = (i === winnerIdx && !spinning);
+
+    // --- corps de la case ---
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.arc(0,0, r-10, a0, a1);
+    ctx.closePath();
+
+    // léger dégradé radial pour le relief
+    const g = ctx.createRadialGradient(0,0, r*0.12, 0,0, r);
+    const base = segColor(i);
+    g.addColorStop(0, shade(base, 18));
+    g.addColorStop(1, shade(base, -12));
+    ctx.fillStyle = isWinner ? shade(base, 40) : g;
+    ctx.fill();
+
+    // --- séparateur néon ---
+    ctx.lineWidth = isWinner ? 7 : 3;
+    ctx.strokeStyle = isWinner ? '#bfffd9' : C.neon;
+    ctx.shadowColor = C.neon;
+    ctx.shadowBlur  = isWinner ? 26 : 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // --- texte de la case ---
+    ctx.save();
+    ctx.rotate(a0 + SEG/2);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const label = WHEEL[i].short;
+    ctx.font = `700 ${Math.max(15, r*0.052)}px 'Oswald', sans-serif`;
+    ctx.fillStyle = (WHEEL[i].game === 'SPECIAL') ? '#fff' : C.cream;
+    ctx.shadowColor = 'rgba(0,0,0,.8)';
+    ctx.shadowBlur  = 4;
+    ctx.fillText(label, r - 28, 0);
+    ctx.restore();
+  }
+
+  // anneau intérieur
+  ctx.beginPath();
+  ctx.arc(0,0, r-10, 0, Math.PI*2);
+  ctx.lineWidth = 6; ctx.strokeStyle = C.neon;
+  ctx.shadowColor = C.neon; ctx.shadowBlur = 14; ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+// Eclaircit/assombrit une couleur hex de `amt` (%)
+function shade(hex, amt){
+  const c = hex.replace('#','');
+  const f = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c, 16);
+  let r=(f>>16)&255, g=(f>>8)&255, b=f&255;
+  const t = amt<0?0:255, p=Math.abs(amt)/100;
+  r=Math.round((t-r)*p+r); g=Math.round((t-g)*p+g); b=Math.round((t-b)*p+b);
+  return `rgb(${r},${g},${b})`;
+}
+
+/* ============================================================
+   CHOIX DU RÉSULTAT (avant l'animation)
+   ============================================================ */
+// Tirage pondéré -> renvoie l'index gagnant
+function pickResult(){
+  const weights = WHEEL.map(it => it.weight || 1);
+  const total = weights.reduce((a,b)=>a+b, 0);
+  let rnd = Math.random() * total;
+  for (let i=0; i<N; i++){
+    rnd -= weights[i];
+    if (rnd <= 0) return i;
+  }
+  return N-1;
+}
+
+/* ============================================================
+   ANIMATION DE ROTATION
+   ============================================================ */
+let tickCount = 0;
+
+function easeOutQuart(t){ return 1 - Math.pow(1 - t, 4); }
+
+// Angle (au centre de la case i) pour l'aligner SOUS le pointeur (en haut)
+function targetRotationFor(idx, turns){
+  // Le pointeur est à -90° (12h). Centre de la case i = i*SEG + SEG/2.
+  // On veut : (rotation + centre) ≡ -90°  (mod 2π)
+  const center = idx * SEG + SEG/2;
+  const pointer = -Math.PI/2;
+  let base = pointer - center;
+  // normalise pour partir de la rotation actuelle et ajouter des tours complets
+  const twoPi = Math.PI*2;
+  base = ((base % twoPi) + twoPi) % twoPi;
+  const current = ((rotation % twoPi) + twoPi) % twoPi;
+  let delta = base - current;
+  if (delta < 0) delta += twoPi;
+  return rotation + delta + turns * twoPi;
+}
+
+/**
+ * spinWheel(forcedIndex)
+ * Lance la roue. Si forcedIndex est fourni, force ce résultat,
+ * sinon tire un résultat pondéré via pickResult().
+ */
+function spinWheel(forcedIndex){
+  if (spinning) return;
+  showWheel();
+
+  winnerIdx = (Number.isInteger(forcedIndex) && forcedIndex>=0 && forcedIndex<N)
+            ? forcedIndex
+            : pickResult();
+
+  hideResult();
+  spinning = true;
+  wheelWrap.classList.add('spinning');
+  canvas.classList.add('spinning');
+  playSound('appear');
+
+  const duration = rand(CONFIG.spinMinDuration, CONFIG.spinMaxDuration);
+  const turns    = Math.floor(rand(CONFIG.minTurns, CONFIG.maxTurns));
+  const startRot = rotation;
+  const endRot   = targetRotationFor(winnerIdx, turns);
+  const span     = endRot - startRot;
+  let   startTs  = null;
+  tickCount = 0;
+
+  function frame(ts){
+    if (startTs === null) startTs = ts;
+    const t = Math.min(1, (ts - startTs) / duration);
+    const e = easeOutQuart(t);
+    rotation = startRot + span * e;
+
+    // son de cran à chaque case franchie
+    const passed = Math.floor((rotation - startRot) / SEG);
+    if (passed > tickCount){ tickCount = passed; playSound('tick'); }
+
+    drawWheel();
+
+    if (t < 1){
+      requestAnimationFrame(frame);
+    } else {
+      finishSpin();
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+function finishSpin(){
+  spinning = false;
+  wheelWrap.classList.remove('spinning');
+  canvas.classList.remove('spinning');
+  drawWheel(); // redessine avec la case gagnante mise en valeur
+
+  const item = WHEEL[winnerIdx];
+  showResult(item);
+  playSound('win');
+  // Le VIP déclenche une célébration renforcée (violet/or, double salve)
+  if (item.vip){
+    burstConfetti(['#7a2bff','#b388ff','#ffcf5c','#ffffff','#00ff66'], 320);
+    setTimeout(()=> burstConfetti(['#7a2bff','#ffcf5c','#ffffff'], 220), 400);
+  } else {
+    burstConfetti();
+  }
+
+  // RELANCE automatique
+  if (item.action === 'respin'){
+    setTimeout(()=> spinWheel(), 2200);
+    return;
+  }
+
+  // auto-masquage
+  if (CONFIG.autoHideMs > 0){
+    setTimeout(hideWheel, Math.max(CONFIG.autoHideMs, CONFIG.hideDelayAfterWin));
+  }
+}
+
+const rand = (a,b)=> a + Math.random()*(b-a);
+
+/* ============================================================
+   AFFICHAGE / MASQUAGE
+   ============================================================ */
+function showWheel(){ stage.classList.add('show'); }
+function hideWheel(){ stage.classList.remove('show'); hideResult(); }
+
+function showResult(item){
+  const labels = { HUNT:'Hunt: Showdown', DBD:'Dead by Daylight', PUNITION:'Punition', SPECIAL:'Roue du Jam' };
+  resGame.textContent = item.vip ? '★ RÉCOMPENSE VIP ★' : (labels[item.game] || '');
+  resText.textContent = item.full;
+  resultEl.classList.add('show');
+}
+function hideResult(){ resultEl.classList.remove('show'); }
+
+/* ============================================================
+   CONFETTIS (vert / rouge)
+   ============================================================ */
+const conf = document.getElementById('confetti');
+const cctx = conf.getContext('2d');
+let particles = [];
+function sizeConfetti(){ conf.width = innerWidth; conf.height = innerHeight; }
+sizeConfetti(); addEventListener('resize', sizeConfetti);
+
+function burstConfetti(palette, count){
+  palette = palette || [C.neon, C.redBright, '#b6ff00', C.gold, '#ffffff'];
+  count = count || 160;
+  const cx = innerWidth/2, cy = innerHeight*0.45;
+  for (let i=0;i<count;i++){
+    const ang = Math.random()*Math.PI*2;
+    const spd = 4 + Math.random()*9;
+    particles.push({
+      x:cx, y:cy,
+      vx:Math.cos(ang)*spd,
+      vy:Math.sin(ang)*spd - 4,
+      g:0.18 + Math.random()*0.12,
+      size:5 + Math.random()*7,
+      rot:Math.random()*Math.PI, vr:(Math.random()-.5)*0.3,
+      color:palette[(Math.random()*palette.length)|0],
+      life:90 + Math.random()*50,
+    });
+  }
+  if (!confettiRunning){ confettiRunning = true; runConfetti(); }
+}
+let confettiRunning = false;
+function runConfetti(){
+  cctx.clearRect(0,0,conf.width,conf.height);
+  particles.forEach(p=>{
+    p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life--;
+    cctx.save();
+    cctx.translate(p.x,p.y); cctx.rotate(p.rot);
+    cctx.fillStyle = p.color;
+    cctx.shadowColor = p.color; cctx.shadowBlur = 8;
+    cctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
+    cctx.restore();
+  });
+  particles = particles.filter(p=> p.life>0 && p.y < conf.height+40);
+  if (particles.length){ requestAnimationFrame(runConfetti); }
+  else { cctx.clearRect(0,0,conf.width,conf.height); confettiRunning = false; }
+}
+
+/* ============================================================
+   SONS (URL fournie OU synthèse Web Audio en fallback)
+   ============================================================ */
+let audioCtx = null;
+function getAudio(){ return audioCtx || (audioCtx = new (window.AudioContext||window.webkitAudioContext)()); }
+
+function playSound(kind){
+  const url = CONFIG.sounds[kind];
+  if (url){
+    const a = new Audio(url); a.volume = CONFIG.volume; a.play().catch(()=>{});
+    return;
+  }
+  // --- Fallback synthétisé ---
+  try{
+    const ac = getAudio();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    const now = ac.currentTime;
+    if (kind === 'tick'){
+      o.type='square'; o.frequency.value=520;
+      g.gain.setValueAtTime(0.06*CONFIG.volume, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+0.05);
+      o.start(now); o.stop(now+0.05);
+    } else if (kind === 'win'){
+      o.type='triangle';
+      [523,659,784,1046].forEach((f,i)=>{
+        const t=now+i*0.12;
+        o.frequency.setValueAtTime(f,t);
+      });
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.25*CONFIG.volume, now+0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+0.6);
+      o.start(now); o.stop(now+0.6);
+    } else { // appear
+      o.type='sine'; o.frequency.setValueAtTime(300,now);
+      o.frequency.exponentialRampToValueAtTime(700, now+0.25);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.12*CONFIG.volume, now+0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+0.3);
+      o.start(now); o.stop(now+0.3);
+    }
+  }catch(e){ /* audio non dispo */ }
+}
+
+/* ============================================================
+   INTÉGRATION TWITCH / OBS
+   ------------------------------------------------------------
+   Déclencher la roue depuis les points de chaîne :
+   - Via Streamer.bot / outil HTTP : appeler l'URL avec ?spin=1
+   - Via postMessage : window.postMessage({type:'spin'}, '*')
+   - Via JS direct dans la source navigateur : spinWheel()
+   - Pour forcer une case (tests) : spinWheel(3)
+   ============================================================ */
+// Écoute des messages externes (Streamer.bot WebSocket overlay, etc.)
+addEventListener('message', (ev)=>{
+  const d = ev.data || {};
+  if (d.type === 'spin') spinWheel(Number.isInteger(d.index)? d.index : undefined);
+  if (d.type === 'hide') hideWheel();
+});
+
+/* ---- Client Streamer.bot : écoute les points de chaîne et lance la roue ---- */
+function connectStreamerbot(){
+  const cfg = CONFIG.streamerbot;
+  if (!cfg.enabled) return;
+  let ws;
+  try { ws = new WebSocket(cfg.url); }
+  catch(e){ console.warn('[Streamer.bot] URL invalide', e); return; }
+
+  ws.onopen = ()=>{
+    console.log('[Streamer.bot] connecté');
+    // S'abonner aux récompenses de points de chaîne
+    ws.send(JSON.stringify({ request:'Subscribe', id:'wheel',
+      events:{ Twitch:['RewardRedemption'] } }));
+  };
+
+  ws.onmessage = (msg)=>{
+    let m; try{ m = JSON.parse(msg.data); }catch{ return; }
+    if (!m.event || m.event.type !== 'RewardRedemption') return;
+    const d = m.data || {};
+    // Le nom de la récompense peut se trouver à plusieurs endroits selon la version
+    const title = d.reward?.title || d.reward_name || d.rewardName
+               || d.redemption?.reward?.title || '';
+    const wanted = cfg.rewardName.trim();
+    if (wanted && title.trim().toLowerCase() !== wanted.toLowerCase()) return;
+    console.log('[Streamer.bot] récompense reçue :', title || '(toute récompense)');
+    spinWheel();
+  };
+
+  ws.onclose = ()=>{ console.log('[Streamer.bot] déconnecté, reconnexion dans 5 s');
+    setTimeout(connectStreamerbot, 5000); };
+  ws.onerror = ()=>{ try{ ws.close(); }catch{} };
+}
+
+/* ============================================================
+   FILTRAGE DE LA ROUE selon le jeu détecté sur Twitch
+   currentGame = 'HUNT' | 'DBD' | null
+   - null  : pas encore détecté -> toutes les cases
+   - sinon : cases du jeu + PUNITION + SPECIAL (Rien/Relance/Jackpot/VIP)
+   - catégorie ni Hunt ni DBD -> on garde le dernier jeu connu
+   ============================================================ */
+let currentGame = null;
+function rebuildWheel(){
+  // n'affiche que les gages du jeu détecté (Hunt OU DBD).
+  // avant détection : les deux jeux mélangés.
+  WHEEL = currentGame
+    ? ITEMS.filter(it => it.game === currentGame)
+    : ITEMS;
+  N = WHEEL.length;
+  SEG = (Math.PI * 2) / N;
+  winnerIdx = -1;
+  if (typeof fitCanvasDPR === 'function') fitCanvasDPR(); else drawWheel();
+}
+function setGame(game){
+  if (game !== 'HUNT' && game !== 'Dead By Daylight') return;   // inconnu -> dernier jeu connu conservé
+  if (game === currentGame) return;
+  currentGame = game;
+  console.log('[Roue] jeu actif :', game);
+  rebuildWheel();
+}
+function applyCategory(name){
+  if (!name) return;
+  const n = String(name).toLowerCase();
+  if (n.includes('hunt')) setGame('HUNT');
+  else if (n.includes('dead by daylight')) setGame('DBD');
+  // sinon : catégorie hors jeu -> on ne touche pas à currentGame
+}
+window.setGame = setGame;   // test manuel : setGame('DBD') dans la console
+
+/* ---- Mode DIRECT Twitch (EventSub WebSocket) : écoute les points de chaîne ----
+   Étapes : valider le token -> client_id + user_id, ouvrir le WS EventSub,
+   s'abonner aux redemptions, puis lancer la roue à chaque récompense. */
+async function connectTwitch(){
+  const cfg = CONFIG.twitch;
+  if (!cfg.enabled || !cfg.token) return;
+  const token = cfg.token.replace(/^oauth:/i, '').trim();
+
+  // 1) Valider le token -> récupère client_id, user_id, scopes
+  let info;
+  try{
+    const r = await fetch('https://id.twitch.tv/oauth2/validate', { headers:{ Authorization:'OAuth ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    info = await r.json();
+  }catch(e){
+    console.error('[Twitch] token invalide ou expiré :', e.message,
+                  '\n→ régénère un token avec le scope channel:read:redemptions');
+    return;
+  }
+  const clientId = info.client_id, userId = info.user_id;
+  if (!(info.scopes || []).includes('channel:read:redemptions')){
+    console.warn('[Twitch] ⚠️ le token n’a PAS le scope « channel:read:redemptions » — l’abonnement va échouer.');
+  }
+  console.log('[Twitch] token OK pour', info.login, '— connexion EventSub…');
+
+  // Récupère la catégorie/jeu en cours (aucun scope requis)
+  async function fetchCurrentCategory(){
+    try{
+      const r = await fetch(`https://api.twitch.tv/helix/channels?broadcaster_id=${userId}`, {
+        headers:{ 'Authorization':'Bearer ' + token, 'Client-Id':clientId } });
+      const d = await r.json();
+      applyCategory(d.data && d.data[0] && d.data[0].game_name);
+    }catch(e){ /* ignore */ }
+  }
+
+  let ws, subscribed = false, closedByUs = false;
+  function open(url){
+    closedByUs = false;
+    ws = new WebSocket(url || 'wss://eventsub.wss.twitch.tv/ws');
+
+    ws.onmessage = async (ev)=>{
+      let m; try{ m = JSON.parse(ev.data); }catch{ return; }
+      const type = m.metadata && m.metadata.message_type;
+
+      if (type === 'session_welcome'){
+        if (subscribed) return;              // reconnexion : abonnements déjà migrés
+        subscribed = true;
+        const sessionId = m.payload.session.id;
+        // Abonnements : points de chaîne + changement de catégorie (détection du jeu)
+        const SUBS = [
+          { type:'channel.channel_points_custom_reward_redemption.add', version:'1', condition:{ broadcaster_user_id:userId } },
+          { type:'channel.update', version:'2', condition:{ broadcaster_user_id:userId } },
+        ];
+        for (const s of SUBS){
+          try{
+            const sr = await fetch('https://api.twitch.tv/helix/eventsub/subscriptions', {
+              method:'POST',
+              headers:{ 'Authorization':'Bearer ' + token, 'Client-Id':clientId, 'Content-Type':'application/json' },
+              body: JSON.stringify({ ...s, transport:{ method:'websocket', session_id:sessionId } }),
+            });
+            if (sr.ok) console.log('[Twitch] abonné :', s.type);
+            else console.warn('[Twitch] abonnement refusé', s.type, sr.status);
+          }catch(e){ console.error('[Twitch] erreur abonnement', s.type, e); }
+        }
+        fetchCurrentCategory();   // catégorie actuelle (au démarrage)
+      }
+      else if (type === 'session_reconnect'){
+        const next = m.payload.session.reconnect_url;
+        closedByUs = true; try{ ws.close(); }catch{}; open(next);  // migration : pas de réabonnement
+      }
+      else if (type === 'notification'){
+        const subType = m.payload.subscription && m.payload.subscription.type;
+        const e2 = m.payload.event || {};
+        if (subType === 'channel.update'){
+          applyCategory(e2.category_name);              // le jeu a changé -> filtre la roue
+        } else {                                        // redemption points de chaîne
+          const title = (e2.reward && e2.reward.title) || '';
+          const wanted = (cfg.rewardName || '').trim();
+          if (wanted && title.trim().toLowerCase() !== wanted.toLowerCase()) return;
+          console.log('[Twitch] 🎡 récompense « ' + title + ' » par ' + (e2.user_name || '?'));
+          spinWheel();
+        }
+      }
+    };
+
+    ws.onclose = ()=>{
+      if (closedByUs) return;                // fermeture volontaire (reconnect) -> ne pas rouvrir
+      subscribed = false;                    // vraie coupure -> se réabonner
+      console.log('[Twitch] WS fermé, reconnexion dans 3 s');
+      setTimeout(()=> open(), 3000);
+    };
+    ws.onerror = ()=>{ try{ ws.close(); }catch{} };
+  }
+  open();
+}
+
+// Paramètres d'URL : ?spin=1 lance auto, ?result=2 force une case, ?debug=1 fond visible
+const params = new URLSearchParams(location.search);
+
+// Détection OBS : window.obsstudio n'existe QUE dans une source navigateur OBS.
+// Hors OBS (aperçu, navigateur) -> mode aperçu : fond sombre + roue visible.
+// Forcer le rendu prod en navigateur : ajouter ?obs=1
+const isOBS = (typeof window.obsstudio !== 'undefined') || params.has('obs');
+const previewMode = !isOBS;
+if (params.has('debug') || previewMode) document.documentElement.classList.add('debug');
+
+/* ============================================================
+   RACCOURCIS CLAVIER (debug / test)
+   ============================================================ */
+addEventListener('keydown', (e)=>{
+  if (e.code === 'Space'){ e.preventDefault(); spinWheel(); }
+  else if (e.key >= '1' && e.key <= '9'){ spinWheel(parseInt(e.key,10)-1); }
+  else if (e.key.toLowerCase() === 'h'){ hideWheel(); }
+});
+
+// Expose pour usage externe
+window.spinWheel = spinWheel;
+window.pickResult = pickResult;
+window.hideWheel = hideWheel;
+window.showWheel = showWheel;
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function fitCanvasDPR(){
+  // rend net sur écrans haute densité tout en gardant la logique en px
+  const cssSize = wheelWrap.clientWidth;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = canvas.height = Math.round(cssSize * dpr);
+  drawWheel();
+}
+addEventListener('resize', fitCanvasDPR);
+window.addEventListener('load', ()=>{ fitCanvasDPR();
+  // Hors OBS : on affiche la roue pour qu'elle soit visible en aperçu.
+  if (previewMode) showWheel();
+  // Connexion aux points de chaîne (selon ce qui est activé dans CONFIG)
+  connectStreamerbot();   // via Streamer.bot
+  connectTwitch();        // mode direct EventSub (token)
+  // Auto-spin si demandé dans l'URL
+  if (params.has('spin')) setTimeout(()=> spinWheel(params.has('result')? parseInt(params.get('result'),10): undefined), 600);
+});
+drawWheel();
+</script>
+</body>
+</html>

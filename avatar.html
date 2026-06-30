@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Avatar Bob — lip-sync micro (remplace la cam)</title>
+
+<style>
+/* ============================================================
+   AVATAR REGGAE — type PNGtuber
+   La silhouette remplace la webcam et sa bouche bouge avec le micro.
+   À mettre comme source navigateur OBS (taille au choix, ex. 480×600).
+   ============================================================ */
+
+:root{
+  --red:#e1251b; --gold:#fed100; --green:#009b3a;
+  --ink:#0c120d; --ink-line:#06270f;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+html, body{ width:100%; height:100%; background:transparent; overflow:hidden;
+  font-family:system-ui, sans-serif; }
+html.debug body{ background:radial-gradient(120% 120% at 50% 30%, #243b22, #0c0f0b); }
+
+#wrap{ position:fixed; inset:0; display:flex; align-items:flex-end; justify-content:center; }
+/* pas de glow : les ombres portées laissent une frange au Chroma Key */
+#avatar{ width:auto; height:96%; max-width:100%; }
+/* vraie webcam : remplit la source, affichée seulement quand la cam est active */
+#cam{ position:fixed; inset:0; width:100%; height:100%; object-fit:cover; display:none; }
+
+/* clignement automatique des yeux */
+.eyes{ transform-box:fill-box; transform-origin:center; animation:blink 5.5s infinite; }
+@keyframes blink{
+  0%,93%,100%{ transform:scaleY(1); }
+  95.5%      { transform:scaleY(.08); }
+}
+
+/* halo « je parle » */
+/* plus de glow vert pendant la parole (c'est lui qui faisait la frange blanche au Chroma Key) */
+#avatar.talking{ filter:none; }
+
+/* Bouton d'activation micro (navigateurs exigent un clic) */
+#micBtn{
+  position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+  z-index:20; cursor:pointer; border:none;
+  font:600 15px/1 system-ui, sans-serif; color:#06270f;
+  padding:12px 18px; border-radius:30px;
+  background:linear-gradient(90deg, var(--green), var(--gold), var(--red));
+  box-shadow:0 4px 14px rgba(0,0,0,.4);
+}
+#micBtn.hidden{ display:none; }
+
+/* mini panneau de réglage (aperçu uniquement) */
+#cfg{ position:fixed; left:10px; top:10px; z-index:20;
+  background:rgba(0,0,0,.6); color:#ffe08a; padding:8px 10px; border-radius:8px;
+  border:1px solid rgba(254,209,0,.4); font:12px/1.4 system-ui; }
+#cfg{ display:none; }              /* caché par défaut (jamais visible pour les viewers) */
+html.debugui #cfg{ display:block; }   /* visible seulement avec ?debug=1 */
+#cfg label{ display:block; margin:4px 0; }
+</style>
+</head>
+<body>
+
+  <button id="micBtn">🎥 Activer caméra + micro</button>
+
+  <div id="cfg">
+    Aperçu · règle puis recopie dans CONFIG<br>
+    <label>Sensibilité <input id="sens" type="range" min="0.5" max="5" step="0.1" value="2"></label>
+    <label>Seuil parole <input id="thr" type="range" min="0" max="0.2" step="0.005" value="0.04"></label>
+    <label>Rebond <input id="bnc" type="range" min="0" max="30" step="1" value="12"></label>
+    <span id="lvl"></span>
+  </div>
+
+  <div id="wrap">
+    <!-- vraie webcam (affichée quand la cam est active) -->
+    <video id="cam" autoplay playsinline muted></video>
+    <svg id="avatar" viewBox="0 0 200 330" aria-label="avatar reggae">
+      <defs>
+        <clipPath id="tamCrown">
+          <path d="M46,112 C44,48 64,20 100,20 C136,20 156,48 154,108
+                   C153,118 146,120 138,117 C118,111 82,111 62,117
+                   C54,120 47,116 46,112 Z"/>
+        </clipPath>
+        <clipPath id="tamBand">
+          <path d="M55,100 C55,90 145,90 145,100 L145,118 C145,130 55,130 55,118 Z"/>
+        </clipPath>
+      </defs>
+
+      <!-- Tout le corps (rebond appliqué ici via JS) -->
+      <g id="body">
+
+        <!-- dreadlocks (derrière) -->
+        <g stroke="#0c120d" stroke-width="11" stroke-linecap="round" fill="none">
+          <path d="M60,110 C44,160 52,212 44,266"/>
+          <path d="M72,106 C60,164 66,218 58,276 C54,296 60,308 56,318"/>
+          <path d="M86,102 C80,166 84,222 82,276 C81,298 84,312 83,320"/>
+          <path d="M100,100 C98,166 100,226 100,280 C100,302 100,314 100,322"/>
+          <path d="M114,102 C120,166 116,222 118,276 C119,298 116,312 117,320"/>
+          <path d="M128,106 C140,164 134,218 142,276 C146,296 140,308 144,318"/>
+          <path d="M140,110 C156,160 148,212 156,266"/>
+        </g>
+
+        <!-- visage -->
+        <path d="M70,106 C70,88 130,88 130,106 L132,168 C132,202 68,202 68,168 Z" fill="#0c120d"/>
+
+        <!-- YEUX -->
+        <g class="eyes">
+          <g>
+            <ellipse cx="88" cy="150" rx="8.5" ry="10" fill="#f4efe2"/>
+            <circle  cx="89" cy="151" r="4" fill="#1a120c"/>
+            <circle  cx="90.5" cy="149" r="1.3" fill="#fff"/>
+          </g>
+          <g>
+            <ellipse cx="112" cy="150" rx="8.5" ry="10" fill="#f4efe2"/>
+            <circle  cx="113" cy="151" r="4" fill="#1a120c"/>
+            <circle  cx="114.5" cy="149" r="1.3" fill="#fff"/>
+          </g>
+        </g>
+        <!-- sourcils -->
+        <path d="M79,138 Q88,134 97,138" stroke="#06270f" stroke-width="3" fill="none" stroke-linecap="round"/>
+        <path d="M103,138 Q112,134 121,138" stroke="#06270f" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+        <!-- BOUCHE réaliste (formes pilotées par le micro) -->
+        <g id="mouthGroup">
+          <path id="mouthInner" fill="#3a0f0b"/>   <!-- cavité buccale -->
+          <path id="teeth"      fill="#d7c8a4"/>   <!-- dents du haut (ivoire atténué, moins « blanc ») -->
+          <path id="tongue"     fill="#c0473c"/>   <!-- langue -->
+          <path id="lips" fill="none" stroke="#1a0f0c" stroke-width="2.6"
+                stroke-linecap="round" stroke-linejoin="round"/>  <!-- contour lèvres -->
+        </g>
+
+        <!-- TAM rasta — style flat -->
+        <g clip-path="url(#tamCrown)">
+          <rect x="28" y="6" width="144" height="124" fill="#009b3a"/>
+          <path d="M38,100 Q100,86 162,100 L162,118 Q100,104 38,118 Z" fill="#009b3a"/>
+          <path d="M38,82  Q100,68 162,82  L162,100 Q100,86  38,100 Z" fill="#fed100"/>
+          <path d="M38,62  Q100,48 162,62  L162,82  Q100,68  38,82  Z" fill="#e1251b"/>
+          <path d="M34,42  Q100,28 166,42  L166,62  Q100,48  34,62  Z" fill="#fed100"/>
+          <path d="M30,18  Q100,4  170,18  L170,42  Q100,28  30,42  Z" fill="#009b3a"/>
+          <g fill="none" stroke="#06270f" stroke-width="2" stroke-opacity=".5">
+            <path d="M30,100 Q100,86 170,100"/><path d="M30,82 Q100,68 170,82"/>
+            <path d="M30,62 Q100,48 170,62"/><path d="M30,42 Q100,28 170,42"/>
+          </g>
+        </g>
+        <path d="M46,112 C44,48 64,20 100,20 C136,20 156,48 154,108"
+              fill="none" stroke="#06270f" stroke-width="3.5"/>
+        <path d="M55,100 C55,90 145,90 145,100 L145,118 C145,130 55,130 55,118 Z"
+              fill="#0c3a18" stroke="#06270f" stroke-width="3.5"/>
+        <g clip-path="url(#tamBand)" stroke="#06270f" stroke-width="2" stroke-opacity=".45">
+          <line x1="66" y1="86" x2="66" y2="134"/><line x1="80" y1="86" x2="80" y2="134"/>
+          <line x1="94" y1="86" x2="94" y2="134"/><line x1="108" y1="86" x2="108" y2="134"/>
+          <line x1="122" y1="86" x2="122" y2="134"/><line x1="136" y1="86" x2="136" y2="134"/>
+        </g>
+        <line x1="100" y1="24" x2="100" y2="13" stroke="#06270f" stroke-width="3.5"/>
+        <circle cx="100" cy="11" r="9" fill="#fed100" stroke="#06270f" stroke-width="2.5"/>
+
+      </g>
+    </svg>
+  </div>
+
+<script>
+/* ============================================================
+   CONFIG — réglages lip-sync
+   ============================================================ */
+const CONFIG = {
+  sensitivity: 2.0,   // gain appliqué au volume du micro
+  talkThreshold: 0.03,// seuil PLANCHER minimal (sécurité)
+  talkMargin: 0.025,  // marge AU-DESSUS du bruit de fond pour compter comme « parole »
+                      //   -> augmente si la bouche bouge sans que tu parles
+  releaseFrames: 7,   // ~120 ms : garde la bouche active un court instant (anti-clignotement)
+  bounce: 12,         // amplitude du rebond quand tu parles (px viewBox)
+  smoothing: 0.3,     // lissage (0 = brut, 1 = très mou)
+  mouthMax: 12,       // ouverture max de la bouche (ry)
+  flapSpeed: 0.5,     // vitesse de battement de la bouche quand tu parles (plus grand = plus rapide)
+  autoStart: true,    // tente d'activer caméra+micro au chargement
+
+  // ---- Caméra ----
+  // false = AVATAR SEUL : ne demande QUE le micro (pas la caméra).
+  //         -> évite l'autorisation caméra d'OBS. La vraie cam se met en
+  //            source OBS classique « Périphérique de capture vidéo » à côté.
+  // true  = la page affiche aussi la webcam et bascule cam/avatar automatiquement
+  //         (nécessite l'autorisation caméra dans OBS).
+  showWebcam: false,
+  camOffBrightness: 14,    // (utilisé seulement si showWebcam = true)
+};
+
+/* ============================================================
+   Aperçu vs OBS
+   ============================================================ */
+const params = new URLSearchParams(location.search);
+const isOBS = (typeof window.obsstudio !== 'undefined') || params.has('obs');
+if (!isOBS) document.documentElement.classList.add('debug');        // fond sombre d'aperçu
+if (params.has('debug')) document.documentElement.classList.add('debugui'); // panneau réglages
+
+// Mode CHROMA KEY : fond uni pour capturer dans Chrome puis détourer dans OBS.
+//   ?chroma     -> magenta (#ff00ff) par défaut (aucune couleur magenta dans l'avatar)
+//   ?bg=00ff00  -> couleur perso (ex. vert) ; attention le bonnet a du vert !
+const chroma = params.get('bg') || (params.has('chroma') ? 'ff00ff' : '');
+if (chroma){
+  document.documentElement.classList.remove('debug');
+  document.body.style.background = '#' + chroma.replace(/^#/, '');
+}
+
+const avatar = document.getElementById('avatar');
+const body   = document.getElementById('body');
+const mInner  = document.getElementById('mouthInner');
+const mTeeth  = document.getElementById('teeth');
+const mTongue = document.getElementById('tongue');
+const mLips   = document.getElementById('lips');
+const micBtn = document.getElementById('micBtn');
+const lvlEl  = document.getElementById('lvl');
+
+/* Réglages live (aperçu) */
+const sens=document.getElementById('sens'), thr=document.getElementById('thr'), bnc=document.getElementById('bnc');
+if (sens){ sens.value=CONFIG.sensitivity; thr.value=CONFIG.talkThreshold; bnc.value=CONFIG.bounce;
+  sens.oninput=()=>CONFIG.sensitivity=+sens.value;
+  thr.oninput =()=>CONFIG.talkThreshold=+thr.value;
+  bnc.oninput =()=>CONFIG.bounce=+bnc.value;
+}
+
+/* ============================================================
+   MICRO + analyse du volume
+   ============================================================ */
+let analyser, dataArr, smoothed = 0, running = false;
+let videoTrack = null, camForcedOff = false, isBlack = false;
+
+const camEl = document.getElementById('cam');
+// petit canvas pour mesurer la luminosité des frames (détection cam coupée)
+const bcv = document.createElement('canvas'); bcv.width = 32; bcv.height = 18;
+const bcx = bcv.getContext('2d', { willReadFrequently:true });
+
+/* Affiche la vraie cam (camLive=true) ou l'avatar (camLive=false) */
+function setMode(camLive){
+  camEl.style.display  = camLive ? '' : 'none';
+  avatar.style.display = camLive ? 'none' : '';
+}
+function refreshCamState(){
+  if (!CONFIG.showWebcam){ setMode(false); return; }   // mode avatar seul -> toujours l'avatar
+  const live = !!videoTrack && videoTrack.readyState === 'live'
+            && videoTrack.enabled && !videoTrack.muted
+            && !camForcedOff && !isBlack;
+  setMode(live);
+}
+
+// Affiche l'avatar DÈS le chargement (indépendant du micro/caméra)
+setMode(false);
+
+async function startMedia(){
+  if (running) return;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: CONFIG.showWebcam ? { width:{ideal:1280}, height:{ideal:720} } : false,
+      audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+    });
+  }catch(err){
+    // pas de vidéo dispo -> on tente le micro seul (avatar affiché en permanence)
+    try{ stream = await navigator.mediaDevices.getUserMedia({ audio:true }); }
+    catch(e){
+      console.warn('Aucun média autorisé :', e);
+      micBtn.textContent = '🎤 Cliquer pour autoriser'; micBtn.classList.remove('hidden');
+      return;
+    }
+  }
+  running = true; micBtn.classList.add('hidden');
+
+  // --- Caméra ---
+  videoTrack = stream.getVideoTracks()[0] || null;
+  if (videoTrack){
+    camEl.srcObject = stream;
+    camEl.play().catch(()=>{});
+    // périphérique débranché / désactivé / coupé -> bascule avatar
+    videoTrack.onended = videoTrack.onmute = videoTrack.onunmute = refreshCamState;
+    setInterval(checkBlackFrame, 500);   // cam masquée (cache objectif) = frames noires
+  }
+  refreshCamState();
+
+  // --- Audio / lip-sync ---
+  const at = stream.getAudioTracks()[0];
+  if (at){
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') await ac.resume();
+    const src = ac.createMediaStreamSource(new MediaStream([at]));   // analyse seulement (pas d'écho)
+    analyser = ac.createAnalyser(); analyser.fftSize = 512;
+    dataArr = new Uint8Array(analyser.fftSize);
+    src.connect(analyser);
+    loop();
+  }
+}
+
+/* Mesure la luminosité moyenne de la cam -> détecte cam coupée/masquée */
+function checkBlackFrame(){
+  if (!videoTrack || camForcedOff) return;
+  try{
+    bcx.drawImage(camEl, 0, 0, bcv.width, bcv.height);
+    const d = bcx.getImageData(0, 0, bcv.width, bcv.height).data;
+    let sum = 0; for (let i=0; i<d.length; i+=4){ sum += d[i] + d[i+1] + d[i+2]; }
+    const avg = sum / (d.length/4) / 3;        // 0..255
+    isBlack = avg < CONFIG.camOffBrightness;
+  }catch{ /* frame pas encore prête */ }
+  refreshCamState();
+}
+
+/* Bascule manuelle cam on/off avec la touche C (switch en live sans toucher OBS) */
+window.addEventListener('keydown', (e)=>{
+  if (e.key.toLowerCase() === 'c' && videoTrack){
+    camForcedOff = !camForcedOff;
+    videoTrack.enabled = !camForcedOff;
+    refreshCamState();
+  }
+});
+
+/* Niveau sonore (RMS) -> 0..1 */
+function readLevel(){
+  analyser.getByteTimeDomainData(dataArr);
+  let sum = 0;
+  for (let i=0; i<dataArr.length; i++){
+    const v = (dataArr[i] - 128) / 128;
+    sum += v*v;
+  }
+  const rms = Math.sqrt(sum / dataArr.length);
+  return Math.min(1, rms * CONFIG.sensitivity * 6);
+}
+
+/* Boucle d'animation */
+let flapPhase = 0, mouthOpen = 0;
+let noiseFloor = 0, isTalking = false, holdFrames = 0;
+function loop(){
+  const raw = readLevel();
+  smoothed += (raw - smoothed) * (1 - CONFIG.smoothing);
+
+  // --- Seuil auto : suit le bruit de fond (descend vite, monte très lentement) ---
+  noiseFloor += (smoothed - noiseFloor) * (smoothed < noiseFloor ? 0.25 : 0.0008);
+  const gate = Math.max(CONFIG.talkThreshold, noiseFloor + CONFIG.talkMargin);
+
+  // --- Détection parole avec temporisation (anti-clignotement) ---
+  if (smoothed > gate){ isTalking = true; holdFrames = CONFIG.releaseFrames; }
+  else if (holdFrames > 0){ holdFrames--; }
+  else { isTalking = false; }
+  const talking = isTalking;
+
+  // intensité de la voix 0..1 (pour l'ampleur des battements + le rebond)
+  const loud = talking ? Math.min(1, (smoothed - gate) / 0.18) : 0;
+
+  // BATTEMENT : la bouche oscille tant que tu parles -> alterne ouvert/fermé
+  let target = 0;
+  if (talking){
+    flapPhase += CONFIG.flapSpeed;
+    const flap = 0.5 - 0.5 * Math.cos(flapPhase);     // 0..1, va-et-vient
+    target = flap * (0.45 + 0.55 * loud);             // plus tu parles fort, plus les battements sont amples
+  } else {
+    flapPhase = 0;
+  }
+  // lissage léger pour un mouvement fluide (pas saccadé)
+  mouthOpen += (target - mouthOpen) * 0.5;
+
+  // --- Bouche réaliste : la mâchoire descend (coins ancrés) ---
+  const cx = 100, topY = 177;
+  const drop = mouthOpen * CONFIG.mouthMax;   // ouverture verticale (px)
+  const botY = topY + drop;
+  // cavité = lèvre haute légèrement souriante + lèvre basse qui descend
+  const shape = `M85,${topY} Q${cx},${(topY-2).toFixed(1)} 115,${topY} Q${cx},${botY.toFixed(1)} 85,${topY} Z`;
+  mInner.setAttribute('d', shape);
+  mLips.setAttribute('d', shape);
+  // dents du haut (apparaissent dès que ça s'ouvre un peu)
+  const th = Math.min(3.4, drop*0.4 - 0.6);
+  if (th > 0.3){
+    mTeeth.setAttribute('d',
+      `M88,${(topY-0.5).toFixed(1)} Q${cx},${(topY-2).toFixed(1)} 112,${(topY-0.5).toFixed(1)} `+
+      `L112,${(topY-0.5+th).toFixed(1)} Q${cx},${(topY-2+th).toFixed(1)} 88,${(topY-0.5+th).toFixed(1)} Z`);
+    mTeeth.style.opacity = 1;
+  } else mTeeth.style.opacity = 0;
+  // langue (au fond, quand bien ouvert)
+  if (drop > 6){
+    const ty = botY - 2.5;
+    mTongue.setAttribute('d', `M92,${ty.toFixed(1)} Q${cx},${(ty+3).toFixed(1)} 108,${ty.toFixed(1)} Q${cx},${(ty-3).toFixed(1)} 92,${ty.toFixed(1)} Z`);
+    mTongue.style.opacity = Math.min(1, (drop-6)/4).toFixed(2);
+  } else mTongue.style.opacity = 0;
+  // rebond du corps : suit l'intensité de la voix (pas le battement, sinon ça tremble)
+  body.setAttribute('transform', `translate(0, ${(-loud*CONFIG.bounce).toFixed(1)})`);
+  avatar.classList.toggle('talking', talking);
+
+  if (lvlEl) lvlEl.textContent =
+    `niv ${smoothed.toFixed(3)} · fond ${noiseFloor.toFixed(3)} · seuil ${gate.toFixed(3)} ${talking?'🗣️':'…'}`;
+  requestAnimationFrame(loop);
+}
+
+/* ============================================================
+   Démarrage : clic bouton, ou auto (si autorisé), ou 1re interaction
+   ============================================================ */
+// Bouton micro : invisible pour les viewers en prod.
+// Visible seulement en aperçu, ou en OBS avec ?setup=1 (1er réglage via Interagir).
+if (isOBS && !params.has('setup')) micBtn.classList.add('hidden');
+
+micBtn.addEventListener('click', startMedia);
+window.addEventListener('keydown', startMedia, { once:true });   // une touche (via Interagir) démarre aussi
+window.addEventListener('load', ()=>{ if (CONFIG.autoStart) startMedia(); });
+</script>
+</body>
+</html>

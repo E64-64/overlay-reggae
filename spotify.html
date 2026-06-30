@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Now Playing reggae — source Spotify</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Shrikhand&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   NOW PLAYING REGGAE — source navigateur OBS indépendante
+   Affiche le morceau Spotify joué en live (API officielle, PKCE).
+   Dimensionne la source à env. 460 × 150.
+   ============================================================ */
+:root{
+  --red:#e1251b; --gold:#fed100; --green:#009b3a;
+  --black:#080a08; --black-2:#11160f;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+html, body{ width:100%; height:100%; background:transparent; overflow:hidden;
+  font-family:'Oswald', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+html.debug body{ background:radial-gradient(120% 120% at 50% 0%, #2a1a08, #0a0604); }
+
+/* Panneau rasta (bordure tricolore qui ondule) — identique au chat */
+.panel{
+  position:relative; border-radius:16px; border:3px solid transparent;
+  background:
+    rgba(8,10,8,.42) padding-box,
+    linear-gradient(115deg, var(--red), var(--gold), var(--green), var(--gold), var(--red)) border-box;
+  background-size: 100% 100%, 300% 100%;
+  box-shadow:0 0 14px rgba(0,255,102,.20), 0 0 26px rgba(254,209,0,.18);
+  animation: rastaFlow 7s linear infinite;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+@keyframes rastaFlow{ from{ background-position:0 0,0 0; } to{ background-position:0 0,300% 0; } }
+
+.np{ position:fixed; inset:8px; display:flex; align-items:center; gap:14px;
+  padding:12px 16px; overflow:hidden; }
+
+/* Pochette + vinyle qui tourne derrière */
+.cover-wrap{ position:relative; flex:0 0 auto; width:84px; height:84px; }
+.vinyl{ position:absolute; inset:-6px -6px -6px 18px; border-radius:50%;
+  background:repeating-radial-gradient(circle at 50% 50%, #0c0c0c 0 2px, #1a1a1a 2px 4px);
+  box-shadow:0 0 0 3px #000, inset 0 0 12px rgba(0,0,0,.8);
+  animation:spin 4s linear infinite; }
+.vinyl::after{ content:""; position:absolute; inset:38%; border-radius:50%;
+  background:linear-gradient(135deg,var(--red),var(--gold),var(--green)); }
+.cover{ position:relative; z-index:2; width:84px; height:84px; border-radius:12px;
+  object-fit:cover; background:#11160f;
+  box-shadow:0 4px 14px rgba(0,0,0,.55), 0 0 0 2px rgba(254,209,0,.35);
+  filter:drop-shadow(0 0 6px rgba(0,0,0,.4)); }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.paused .vinyl{ animation-play-state:paused; }
+.paused .cover{ filter:grayscale(.4) brightness(.85); }
+
+/* Bloc texte */
+.info{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:6px; }
+.top{ display:flex; align-items:center; gap:8px; }
+.leaf{ width:20px; height:20px; flex:0 0 auto; animation:sway 4s ease-in-out infinite;
+  filter:drop-shadow(0 0 5px rgba(254,209,0,.55)); }
+.live{ display:inline-flex; align-items:center; gap:5px; font-weight:700; font-size:12px;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--gold); }
+.eq{ display:inline-flex; align-items:flex-end; gap:2px; height:13px; }
+.eq i{ width:3px; background:linear-gradient(var(--gold),var(--green)); border-radius:1px;
+  animation:bounce 900ms ease-in-out infinite; }
+.eq i:nth-child(1){ height:40%; animation-delay:-200ms; }
+.eq i:nth-child(2){ height:90%; animation-delay:-450ms; }
+.eq i:nth-child(3){ height:60%; animation-delay:-120ms; }
+.eq i:nth-child(4){ height:100%; animation-delay:-700ms; }
+.paused .eq i{ animation-play-state:paused; height:30%!important; opacity:.5; }
+@keyframes bounce{ 0%,100%{ transform:scaleY(.35);} 50%{ transform:scaleY(1);} }
+@keyframes sway{ 0%,100%{transform:rotate(-7deg);} 50%{transform:rotate(7deg);} }
+
+.title-wrap{ overflow:hidden; white-space:nowrap; }
+.title{ display:inline-block; font-family:'Shrikhand',cursive; font-size:22px; line-height:1.15;
+  color:#fff; -webkit-text-stroke:.5px rgba(0,0,0,.45);
+  text-shadow:0 2px 6px rgba(0,0,0,.5); }
+.title.scroll{ animation:marquee var(--dur,12s) linear infinite; }
+@keyframes marquee{ 0%,8%{transform:translateX(0);} 92%,100%{transform:translateX(var(--shift,0));} }
+.artist{ font-size:15px; font-weight:600; color:var(--gold); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; text-shadow:0 0 8px rgba(254,209,0,.35); }
+
+/* Barre de progression tricolore */
+.bar{ position:relative; height:6px; border-radius:6px; background:rgba(255,255,255,.14);
+  overflow:hidden; }
+.bar .fill{ position:absolute; inset:0 auto 0 0; width:0%;
+  background:linear-gradient(90deg,var(--green),var(--gold),var(--red)); border-radius:6px; }
+.times{ display:flex; justify-content:space-between; font-size:11px; color:#aeb6ad;
+  font-variant-numeric:tabular-nums; margin-top:1px; }
+
+/* États vides / connexion */
+.empty .vinyl{ animation-play-state:paused; opacity:.5; }
+.empty .title{ font-size:18px; color:#cfd6cd; }
+#connect{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; }
+html.need-auth #connect{ display:flex; }
+html.need-auth .np{ display:none; }
+#connect button{ font-family:'Oswald',sans-serif; font-weight:700; font-size:16px;
+  color:#06210f; cursor:pointer; padding:12px 22px; border:none; border-radius:12px;
+  background:linear-gradient(120deg,var(--gold),#caff70,var(--green));
+  box-shadow:0 0 16px rgba(0,255,102,.4); }
+#connect .hint{ position:absolute; bottom:10px; left:0; right:0; text-align:center;
+  font-size:11px; color:#9aa39a; }
+</style>
+</head>
+<body>
+
+  <div class="np panel" id="player">
+    <div class="cover-wrap">
+      <div class="vinyl"></div>
+      <img class="cover" id="cover" alt="" />
+    </div>
+    <div class="info">
+      <div class="top">
+        <svg class="leaf" viewBox="0 0 100 100" aria-hidden="true">
+          <defs>
+            <linearGradient id="rastaLeaf" gradientUnits="userSpaceOnUse" x1="50" y1="8" x2="50" y2="98">
+              <stop offset="0" stop-color="#e1251b"/><stop offset=".5" stop-color="#fed100"/><stop offset="1" stop-color="#009b3a"/>
+            </linearGradient>
+          </defs>
+          <g fill="url(#rastaLeaf)" stroke="#0a3d16" stroke-width="1.3" stroke-linejoin="round">
+            <path d="M50,90 C44,79 46,64 50,48 C54,64 56,79 50,90 Z" transform="rotate(-88 50 90)"/>
+            <path d="M50,90 C44,79 46,64 50,48 C54,64 56,79 50,90 Z" transform="rotate( 88 50 90)"/>
+            <path d="M50,90 C43,72 45,50 50,28 C55,50 57,72 50,90 Z" transform="rotate(-60 50 90)"/>
+            <path d="M50,90 C43,72 45,50 50,28 C55,50 57,72 50,90 Z" transform="rotate( 60 50 90)"/>
+            <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z" transform="rotate(-32 50 90)"/>
+            <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z" transform="rotate( 32 50 90)"/>
+            <path d="M50,90 C42,68 44,38 50,10 C56,38 58,68 50,90 Z"/>
+          </g>
+        </svg>
+        <span class="live"><span class="eq"><i></i><i></i><i></i><i></i></span> Now Playing</span>
+      </div>
+      <div class="title-wrap"><span class="title" id="title">—</span></div>
+      <div class="artist" id="artist"></div>
+      <div class="bar"><div class="fill" id="fill"></div></div>
+      <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+    </div>
+  </div>
+
+  <div id="connect">
+    <button id="connectBtn">🎵 Connecter Spotify</button>
+    <div class="hint">Connexion unique — clique une fois (via « Interagir » dans OBS).</div>
+  </div>
+
+<script>
+/* ============================================================
+   CONFIG
+   ------------------------------------------------------------
+   1) Va sur https://developer.spotify.com/dashboard → "Create app".
+   2) Récupère le "Client ID", colle-le ci-dessous (ou ?client_id=).
+   3) Dans les "Redirect URIs" de l'app, ajoute EXACTEMENT l'URL où
+      tu ouvres cette page, par ex. :  http://127.0.0.1:5599/spotify.html
+      (Spotify exige du HTTPS, SAUF l'IP loopback 127.0.0.1 — pas "localhost".)
+   4) Ouvre la page à cette même URL et clique "Connecter Spotify".
+   ============================================================ */
+const CONFIG = {
+  clientId: '',   // <-- ton Client ID Spotify ici
+  pollMs: 4000,   // fréquence d'interrogation (ms)
+};
+const params = new URLSearchParams(location.search);
+if (params.get('client_id')) CONFIG.clientId = params.get('client_id');
+
+const isOBS = (typeof window.obsstudio !== 'undefined') || params.has('obs');
+if (!isOBS) document.documentElement.classList.add('debug');
+
+const SCOPES = 'user-read-currently-playing user-read-playback-state';
+const REDIRECT_URI = location.origin + location.pathname;  // doit matcher l'app Spotify
+const AUTH_URL  = 'https://accounts.spotify.com/authorize';
+const TOKEN_URL = 'https://accounts.spotify.com/api/token';
+const NOW_URL   = 'https://api.spotify.com/v1/me/player/currently-playing';
+
+/* --- éléments --- */
+const player = document.getElementById('player');
+const elCover = document.getElementById('cover');
+const elTitle = document.getElementById('title');
+const elArtist = document.getElementById('artist');
+const elFill = document.getElementById('fill');
+const elCur = document.getElementById('cur');
+const elDur = document.getElementById('dur');
+
+/* ============================================================
+   PKCE — utilitaires crypto
+   ============================================================ */
+function randHex(bytes){
+  const a = crypto.getRandomValues(new Uint8Array(bytes));
+  return Array.from(a, b => ('0'+b.toString(16)).slice(-2)).join('');
+}
+function b64url(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+async function challenge(verifier){
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return b64url(digest);
+}
+
+/* ============================================================
+   Auth : login, échange du code, refresh
+   ============================================================ */
+let accessToken = null;
+let tokenExpiry = 0;
+
+async function beginLogin(){
+  if (!CONFIG.clientId){ alert('Renseigne ton Client ID Spotify dans la CONFIG.'); return; }
+  const verifier = randHex(48);                 // 96 caractères (43–128 requis)
+  localStorage.setItem('sp_verifier', verifier);
+  const q = new URLSearchParams({
+    client_id: CONFIG.clientId,
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    code_challenge_method: 'S256',
+    code_challenge: await challenge(verifier),
+    scope: SCOPES,
+  });
+  location.href = AUTH_URL + '?' + q.toString();
+}
+
+async function exchangeCode(code){
+  const verifier = localStorage.getItem('sp_verifier') || '';
+  const body = new URLSearchParams({
+    client_id: CONFIG.clientId,
+    grant_type: 'authorization_code',
+    code, redirect_uri: REDIRECT_URI, code_verifier: verifier,
+  });
+  const r = await fetch(TOKEN_URL, { method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+  if (!r.ok) throw new Error('exchange ' + r.status);
+  applyToken(await r.json());
+}
+
+async function refresh(){
+  const rt = localStorage.getItem('sp_refresh');
+  if (!rt) return false;
+  const body = new URLSearchParams({
+    client_id: CONFIG.clientId, grant_type:'refresh_token', refresh_token: rt });
+  const r = await fetch(TOKEN_URL, { method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+  if (!r.ok){ localStorage.removeItem('sp_refresh'); return false; }
+  applyToken(await r.json());
+  return true;
+}
+
+function applyToken(t){
+  accessToken = t.access_token;
+  tokenExpiry = Date.now() + (t.expires_in - 60) * 1000;   // marge 60 s
+  if (t.refresh_token) localStorage.setItem('sp_refresh', t.refresh_token);
+}
+
+async function ensureToken(){
+  if (accessToken && Date.now() < tokenExpiry) return true;
+  return await refresh();
+}
+
+/* ============================================================
+   Lecture du morceau en cours
+   ============================================================ */
+let cur = { id:null, isPlaying:false, progress:0, duration:1, baseTs:0 };
+
+async function poll(){
+  try{
+    if (!(await ensureToken())){ showNeedAuth(); return; }
+    const r = await fetch(NOW_URL, { headers:{ Authorization:'Bearer '+accessToken } });
+    if (r.status === 204 || r.status === 202){ showEmpty(); return; }   // rien en lecture
+    if (r.status === 401){ accessToken = null; if (await refresh()) return poll(); showNeedAuth(); return; }
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d || !d.item){ showEmpty(); return; }
+    render(d);
+  }catch(e){ /* réseau : on retentera au prochain tick */ }
+}
+
+function render(d){
+  document.documentElement.classList.remove('need-auth');
+  player.classList.remove('empty');
+  const item = d.item;
+  const id = item.id;
+  const isPlaying = !!d.is_playing;
+  // sync de la progression (lissée ensuite par l'animation locale)
+  cur = { id, isPlaying, progress: d.progress_ms||0, duration: item.duration_ms||1, baseTs: Date.now() };
+  player.classList.toggle('paused', !isPlaying);
+  if (id !== render._lastId){            // nouveau morceau : maj texte/pochette
+    render._lastId = id;
+    const img = (item.album && item.album.images && item.album.images[0]) ? item.album.images[0].url : '';
+    setCover(img);
+    setTitle(item.name || '');
+    elArtist.textContent = (item.artists||[]).map(a=>a.name).join(', ');
+    elDur.textContent = fmt(item.duration_ms);
+  }
+  updateBar();                            // maj immédiate (sans attendre rAF)
+}
+
+function showEmpty(){
+  document.documentElement.classList.remove('need-auth');
+  player.classList.add('empty','paused');
+  if (render._lastId !== '__empty__'){
+    render._lastId = '__empty__';
+    setCover('');
+    setTitle('Aucune musique');
+    elArtist.textContent = 'Spotify en pause';
+    elFill.style.width = '0%'; elCur.textContent = '0:00'; elDur.textContent = '0:00';
+  }
+  cur.isPlaying = false;
+}
+
+function showNeedAuth(){ document.documentElement.classList.add('need-auth'); }
+
+/* pochette : masque proprement si absente / cassée (pas d'icône brisée) */
+elCover.addEventListener('error', ()=> elCover.style.visibility='hidden');
+function setCover(url){
+  if (url){ elCover.style.visibility='visible'; elCover.src = url; }
+  else { elCover.removeAttribute('src'); elCover.style.visibility='hidden'; }
+}
+
+/* titre avec défilement si trop long */
+function setTitle(txt){
+  elTitle.classList.remove('scroll');
+  elTitle.textContent = txt;
+  requestAnimationFrame(()=>{
+    const wrap = elTitle.parentElement;
+    const over = elTitle.scrollWidth - wrap.clientWidth;
+    if (over > 6){
+      elTitle.style.setProperty('--shift', '-' + (over + 12) + 'px');
+      elTitle.style.setProperty('--dur', Math.max(8, (over+12)/22) + 's');
+      elTitle.classList.add('scroll');
+    }
+  });
+}
+
+function fmt(ms){ ms=Math.max(0,ms|0); const s=Math.floor(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+/* maj de la barre (appelée par rAF pour le lissage ET par chaque poll) */
+function updateBar(){
+  if (player.classList.contains('empty')) return;
+  let p = cur.progress;
+  if (cur.isPlaying) p += Date.now() - cur.baseTs;
+  if (p > cur.duration) p = cur.duration;
+  elFill.style.width = (100 * p / cur.duration) + '%';
+  elCur.textContent = fmt(p);
+}
+/* lissage 60 fps en OBS (rAF) + filet de sécurité si rAF est throttlé */
+function tick(){ updateBar(); requestAnimationFrame(tick); }
+setInterval(updateBar, 500);
+
+/* ============================================================
+   Démarrage
+   ============================================================ */
+document.getElementById('connectBtn').addEventListener('click', beginLogin);
+
+(async function init(){
+  requestAnimationFrame(tick);
+
+  // mode démo (aperçu hors OBS, si pas de client id configuré)
+  if (params.has('demo') || (!CONFIG.clientId && document.documentElement.classList.contains('debug') && !localStorage.getItem('sp_refresh'))){
+    return demo();
+  }
+
+  // retour de redirection Spotify ?
+  const code = params.get('code');
+  if (code){
+    try{
+      await exchangeCode(code);
+      history.replaceState({}, '', REDIRECT_URI);   // nettoie l'URL (retire ?code=)
+    }catch(e){ console.warn('échange token échoué', e); showNeedAuth(); return; }
+  }
+
+  if (await ensureToken()){
+    poll(); setInterval(poll, CONFIG.pollMs);
+  } else {
+    showNeedAuth();
+  }
+})();
+
+/* --- Démo (aperçu uniquement) --- */
+function demo(){
+  const tracks = [
+    {name:'Could You Be Loved', artist:'Bob Marley & The Wailers', dur:237000, img:'https://i.scdn.co/image/ab67616d0000b2731d6f0c5f0e0b5f5e8b1c0a8a'},
+    {name:'Welcome to Jamrock', artist:'Damian Marley', dur:213000, img:''},
+    {name:'Here Comes The Hotstepper', artist:'Ini Kamoze', dur:268000, img:''},
+  ];
+  let i = 0;
+  function play(t){
+    cur = { id:'demo'+i, isPlaying:true, progress:0, duration:t.dur, baseTs:Date.now() };
+    render._lastId = cur.id;
+    player.classList.remove('paused','empty');
+    document.documentElement.classList.remove('need-auth');
+    setCover(t.img); setTitle(t.name); elArtist.textContent = t.artist; elDur.textContent = fmt(t.dur);
+  }
+  play(tracks[0]);
+  setInterval(()=>{ i=(i+1)%tracks.length; play(tracks[i]); }, 8000);
+}
+</script>
+</body>
+</html>
