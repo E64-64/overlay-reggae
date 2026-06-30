@@ -160,7 +160,14 @@ const CONFIG = {
   pollMs: 4000,   // fréquence d'interrogation (ms)
 };
 const params = new URLSearchParams(location.search);
-if (params.get('client_id')) CONFIG.clientId = params.get('client_id');
+// Client ID : via ?client_id=… (mémorisé), sinon CONFIG, sinon localStorage.
+// Mémorisé car la redirection Spotify renvoie sur une URL SANS le paramètre.
+if (params.get('client_id')){
+  CONFIG.clientId = params.get('client_id');
+  try{ localStorage.setItem('sp_client', CONFIG.clientId); }catch(e){}
+} else if (!CONFIG.clientId){
+  CONFIG.clientId = localStorage.getItem('sp_client') || '';
+}
 
 const isOBS = (typeof window.obsstudio !== 'undefined') || params.has('obs');
 if (!isOBS) document.documentElement.classList.add('debug');
